@@ -1,0 +1,232 @@
+---
+title: "04_OME_yes_no"
+author: "KP"
+date: "2025-10-05"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,        # ukrywa kod
+  warning = FALSE,     # ukrywa ostrzeżenia
+  message = FALSE,     # ukrywa komunikaty
+  error = FALSE        # ukrywa błędy (pokazuje puste miejsce zamiast komunikatu błędu)
+)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readxl)
+library(knitr)
+library(DT)
+```
+
+# Wczytywanie i przetworzenie danych
+
+```{r}
+load("all_data.rda")
+```
+
+
+# 1. Ocena elementów infrastruktury (elements_) wg odwiedzenia OME
+```{r}
+long_df <- all_data %>%
+select(visited_ome, starts_with("elements_")) %>%
+pivot_longer(
+cols = starts_with("elements_"),
+names_to = "element",
+values_to = "rank"
+) %>%
+mutate(element = sub("^elements_", "", element))
+
+ome_elements <- long_df %>%
+group_by(visited_ome, element) %>%
+summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(ome_elements, aes(x = reorder(element, mean_rank), y = mean_rank, fill = visited_ome)) +
+geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+coord_flip() +
+labs(
+title = "Ocena elementów infrastruktury wg odwiedzenia OME",
+subtitle = "Średnia ranga (1 = najwyżej oceniony)",
+x = NULL,
+y = "Średnia ranga",
+fill = "Odwiedził OME"
+) +
+scale_fill_brewer(palette = "Pastel2") +
+theme_minimal(base_size = 13)
+```
+
+```{r}
+elements_tests <- all_data %>%
+select(visited_ome, starts_with("elements_")) %>%
+pivot_longer(
+cols = starts_with("elements_"),
+names_to = "element",
+values_to = "rank"
+) %>%
+group_by(element) %>%
+summarise(
+p_value = wilcox.test(rank ~ visited_ome, exact = FALSE)$p.value,
+.groups = "drop"
+) %>%
+mutate(
+element = sub("^elements_", "", element),
+p_adj = p.adjust(p_value, method = "bonferroni"), # korekta wielokrotnych testów
+significance = case_when(
+p_adj < 0.001 ~ "",
+p_adj < 0.01 ~ "",
+p_adj < 0.05 ~ "",
+TRUE ~ ""
+)
+) %>%
+arrange(p_adj)
+
+datatable(elements_tests,
+caption = "Testy Wilcoxona (Mann–Whitney) dla elementów infrastruktury wg odwiedzenia OME",
+options = list(pageLength = 10))
+```
+
+
+# 2. Ocena elementów infrastruktury PNUW (pnuw_) wg odwiedzenia OME
+
+```{r}
+pnuw_long <- all_data %>%
+select(visited_ome, starts_with("pnuw_")) %>%
+pivot_longer(
+cols = starts_with("pnuw_"),
+names_to = "element",
+values_to = "rank"
+) %>%
+mutate(element = sub("^pnuw_", "", element))
+
+pnuw_visited <- pnuw_long %>%
+group_by(visited_ome, element) %>%
+summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_visited, aes(x = reorder(element, mean_rank), y = mean_rank, fill = visited_ome)) +
+geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+coord_flip() +
+labs(
+title = "Ocena elementów infrastruktury PNUW wg odwiedzenia OME",
+subtitle = "Średnia ranga (1 = najwyżej oceniony)",
+x = NULL,
+y = "Średnia ranga",
+fill = "Odwiedził OME"
+) +
+scale_fill_brewer(palette = "Pastel1") +
+theme_minimal(base_size = 13)
+```
+
+```{r}
+pnuw_tests <- all_data %>%
+select(visited_ome, starts_with("pnuw_")) %>%
+pivot_longer(
+cols = starts_with("pnuw_"),
+names_to = "element",
+values_to = "rank"
+) %>%
+group_by(element) %>%
+summarise(
+p_value = wilcox.test(rank ~ visited_ome, exact = FALSE)$p.value,
+.groups = "drop"
+) %>%
+mutate(
+element = sub("^pnuw_", "", element),
+p_adj = p.adjust(p_value, method = "bonferroni"),
+significance = case_when(
+p_adj < 0.001 ~ "",
+p_adj < 0.01 ~ "",
+p_adj < 0.05 ~ "",
+TRUE ~ ""
+)
+) %>%
+arrange(p_adj)
+
+datatable(pnuw_tests,
+caption = "Testy Wilcoxona (Mann–Whitney) dla elementów PNUW wg odwiedzenia OME",
+options = list(pageLength = 10))
+```
+
+
+# 3. Cel wizyty a odwiedzenie OME
+
+```{r}
+reason_summary <- all_data %>%
+count(visited_ome, main_reason) %>%
+group_by(visited_ome) %>%
+mutate(percent = 100 * n / sum(n)) %>%
+ungroup()
+
+reason_order <- reason_summary %>%
+group_by(main_reason) %>%
+summarise(total_percent = sum(percent)) %>%
+arrange(desc(total_percent)) %>%
+pull(main_reason)
+
+ggplot(reason_summary, aes(x = factor(main_reason, levels = reason_order),
+y = percent, fill = visited_ome)) +
+geom_col(position = position_dodge(width = 0.8)) +
+coord_flip() +
+geom_text(aes(label = sprintf("%.1f%%", percent)),
+position = position_dodge(width = 0.8),
+hjust = -0.1, size = 3.5) +
+labs(
+title = "Główny powód wizyty a odwiedzenie OME",
+x = NULL, y = "Udział procentowy",
+fill = "Odwiedził OME"
+) +
+theme_minimal(base_size = 13)
+```
+
+```{r}
+tab <- table(all_data$visited_ome, all_data$main_reason)
+chisq.test(tab)
+fisher.test(tab)
+```
+
+# 4. Czas podjęcia decyzji o wizycie na szlaku a odwiedzenie OME
+
+```{r}
+decision_summary <- all_data %>%
+count(visited_ome, trail_decision_time) %>%
+group_by(visited_ome) %>%
+mutate(percent = 100 * n / sum(n)) %>%
+ungroup()
+
+decision_order <- decision_summary %>%
+group_by(trail_decision_time) %>%
+summarise(total_percent = sum(percent)) %>%
+arrange(desc(total_percent)) %>%
+pull(trail_decision_time)
+
+ggplot(decision_summary, aes(x = factor(trail_decision_time, levels = decision_order),
+y = percent, fill = visited_ome)) +
+geom_col(position = position_dodge(width = 0.8)) +
+coord_flip() +
+geom_text(aes(label = sprintf("%.1f%%", percent)),
+position = position_dodge(width = 0.8),
+hjust = -0.1, size = 3.5) +
+labs(
+title = "Czas podjęcia decyzji o wizycie a odwiedzenie OME",
+x = NULL, y = "Udział procentowy",
+fill = "Odwiedził OME"
+) +
+theme_minimal(base_size = 13)
+```
+
+```{r}
+tab <- table(all_data$visited_ome, all_data$trail_decision_time)
+chisq.test(tab)
+fisher.test(tab)
+```
+
+
+
+

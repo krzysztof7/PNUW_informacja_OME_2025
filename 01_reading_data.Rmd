@@ -1,0 +1,243 @@
+---
+title: "01_Reading_data"
+author: "KP"
+date: "2025-10-05"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,        # ukrywa kod
+  warning = FALSE,     # ukrywa ostrzeżenia
+  message = FALSE,     # ukrywa komunikaty
+  error = FALSE        # ukrywa błędy (pokazuje puste miejsce zamiast komunikatu błędu)
+)
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(knitr)
+library(DT)
+library(tidyverse)
+```
+
+
+# Wczytywanie i przetworzenie danych
+
+```{r}
+
+raw_data <- read_excel("PNUW_lato_2025_informacja_OME_to_R.xlsx", sheet = "short_colname_data")
+metadata <- read_excel("PNUW_lato_2025_informacja_OME_to_R.xlsx", sheet = "metadata")
+
+all_data <- raw_data %>% 
+  select(-starts_with("x")) %>% 
+  mutate(place = if_else(place == "Most Wysokińskiego (Betonka)", "Betonka", place))  %>% 
+  mutate(place = factor(place,
+                               levels = c("Betonka", "Olszynki"),
+                               ordered = FALSE)) %>% 
+  mutate(visits_count = factor(visits_count,
+                               levels = c("pierwszy", "drugi", "trzeci lub więcej"),
+                               ordered = TRUE)) %>% 
+  mutate(main_reason = factor(main_reason,
+                               levels = c("Odpoczynek", "Bliskość miejsca zamieszkania", "Obserwacja przyrody",
+                                          "Poznanie terenu", "Inne"),
+                               ordered = TRUE)) %>% 
+  
+  mutate(infrastructure_assessment = factor(infrastructure_assessment,
+                                levels = c("Zbyt uboga i powinna być rozbudowana", "Optymalna", 
+                                           "Zbyt rozbudowana i powinna być ograniczona", "Nie mam zdania"),
+                                ordered = FALSE)) %>% 
+  mutate(trail_decision_time = factor(trail_decision_time,
+                               levels = c("Przed przyjazdem", "Będąc już na miejscu", 
+                                          "Po wizycie na wystawie OME", 
+                                          "Po uzyskaniu informacji od pracownika OME", 
+                                          "Nie planowałem, to spontaniczna decyzja", "Inne"),
+                               ordered = FALSE)) %>% 
+  mutate(visited_ome = factor(visited_ome,
+                               levels = c("Tak", "Nie"),
+                               ordered = FALSE)) %>% 
+  mutate(it_staff_asked = factor(it_staff_asked,
+                               levels = c("Tak", "Nie"),
+                               ordered = FALSE)) %>% 
+  mutate(it_exhibition_asked = factor(it_exhibition_asked,
+                               levels = c("Tak", "Nie"),
+                               ordered = FALSE)) %>% 
+  # zagregowanie 'nie miałem planów' do 'nie zmieniłem planów'
+  mutate(it_staff_plan_change = factor(
+    case_when(
+        it_staff_plan_change == "nie miałem planów" ~ "nie zmieniłem planów",
+        TRUE ~ as.character(it_staff_plan_change)
+    ),
+    levels = c("całkowicie zmieniłem", "częściowo zmieniłem", "nie zmieniłem planów"),
+    ordered = TRUE
+    )) %>%
+  # zagregowanie 'nie miałem planów' do 'nie zmieniłem planów'
+  mutate(it_exhibition_plan_change = factor(
+   case_when(
+        it_exhibition_plan_change == "nie miałem planów" ~ "nie zmieniłem planów",
+        TRUE ~ as.character(it_exhibition_plan_change)
+    ),
+    levels = c("całkowicie zmieniłem", "częściowo zmieniłem", "nie zmieniłem planów"),
+    ordered = TRUE
+    )) %>% 
+ 
+  mutate(sex = factor(sex,
+                               levels = c("Kobieta", "Mężczyzna"),
+                               ordered = FALSE)) %>% 
+  mutate(age = factor(age,
+                               levels = c("18-30", "31-40", "41-50", "51-60", "powyżej 60"),
+                               ordered = TRUE)) %>% 
+  mutate(education = case_when(
+                              education %in% c("podstawowe", "zawodowe") ~ "podstawowe_zawodowe",
+                              TRUE ~ education)) %>%
+  mutate(education = factor(education,
+                            levels = c("podstawowe_zawodowe", "średnie", "wyższe"),
+                            ordered = TRUE)) %>% 
+  mutate(distance_zone = factor(distance_zone,
+                               levels = c("1", "2", "3", "4"),
+                               ordered = TRUE)) %>% 
+  mutate(distance_zone2 = case_when(
+           distance_zone == "1" ~ "miejscowi",
+           distance_zone %in% c("2", "3", "4") ~ "przyjezdni"
+         ),
+         distance_zone2 = factor(distance_zone2,
+                                 levels = c("miejscowi", "przyjezdni"),
+                                 ordered = TRUE))
+
+
+```
+
+## Odwócenie rang - wyższy numer to wyższa ocena
+
+Odwrócono rangi, teraz 1 to ocena najniższa, a 8 lub 12 to najwyższa.
+
+```{r}
+all_data <- all_data %>%
+  mutate(across(starts_with("elements_"), ~ (13 - .x)  # automatycznie da NA gdy .x jest NA
+  )) %>% 
+  mutate(across(starts_with("pnuw_"), ~ (9 - .x)
+  ))
+```
+
+
+## Dodatkowe zmienne (kolumny)
+
+Dodanie kolumn traktujących łącznie wizytę w OME i uzyskaną tam informację oraz zmiany planów.
+
+Potraktowano "nie miałem planów" i  "nie zmieniłem planów" jako odpowiedzi tożsame i zostawiono "nie zmieniłem planów"
+
+```{r}
+all_data <- all_data %>% 
+  mutate(
+    ome_plan_changed = case_when(
+      it_staff_plan_change == "całkowicie zmieniłem" | it_exhibition_plan_change == "całkowicie zmieniłem" ~ "całkowicie zmieniłem",
+      
+     it_staff_plan_change == "częściowo zmieniłem" | it_exhibition_plan_change == "częściowo zmieniłem" ~ "częściowo zmieniłem",
+      
+     it_staff_plan_change == "nie zmieniłem planów" | it_exhibition_plan_change == "nie zmieniłem planów" ~ "nie zmieniłem planów",
+     
+    TRUE ~ NA
+    )
+  )
+```
+
+
+## Mapa poznawcza - zmiana kolumn na factor
+
+```{r}
+all_data <- all_data %>%
+  mutate(
+    across(
+      starts_with("m_") & !matches("^m_scale$"),
+      ~ factor(., levels = c("nie", "tak"))
+    ),
+    m_scale = factor(m_scale, levels = c("mała", "duża"))
+  )
+```
+
+# Zapisanie do DF all_data
+
+```{r}
+save(all_data, file = "all_data.rda")
+```
+
+
+
+# Metadane
+
+```{r}
+datatable(
+  metadata,
+  options = list(
+    pageLength = 25,      # pokazuje 25 wierszy na stronę
+    scrollX = TRUE,       # poziome przewijanie
+    searchHighlight = TRUE # podświetla wyniki wyszukiwania
+  ),
+  filter = 'top',         # filtry na górze
+  rownames = FALSE        # bez nazw wierszy
+)
+```
+
+
+**elements_** - Na infrastrukturę turystyczną parków narodowych składa się wiele elementów. Jakie elementy Pani/Pana zdaniem mają największe znaczenie dla obsługi turystów?
+
+**pnuw_** - Proszę dokonać oceny istniejącej infrastruktury Parku Narodowego „Ujście Warty” w ten sposób, że liczbę 1 przypisujemy elementowi najwyżej ocenianemu, a 8 elementowi ocenianemu najgorzej.
+
+**distance_zone** - 1) Miejscowi, 2) Regionalni (przyjezdni bliżsi), 3) Przyjezdni (dalsi), 4) Zagraniczni
+
+
+## Struktura
+
+```{r}
+str(all_data)
+```
+
+
+## Podsumowanie
+
+```{r}
+summary(all_data)
+```
+
+## Brakujące dane
+
+Usunięto pojedyncze wskazania w elements_ i pnuw_ tak, że zostały tylko kompletne.
+
+
+```{r}
+na_counts_df <- metadata %>%
+  rowwise() %>%
+  mutate(na_count = if(short_name %in% names(raw_data)) {
+    sum(is.na(raw_data[[short_name]]))
+  } else {
+    NA
+  }) %>%
+  select(short_name, na_count) %>% 
+  filter(!is.na(na_count)) %>% 
+  filter(na_count != 0)
+
+print(na_counts_df, n=30)
+```
+
+w kolumnach zaczynających się od elements_
+
+```{r}
+all_data %>%
+  filter(if_any(starts_with("elements_"), is.na)) %>%
+  nrow()
+```
+
+w kolumnach zaczynających się od pnuw_
+
+```{r}
+all_data %>%
+  filter(if_any(starts_with("pnuw_"), is.na)) %>%
+  nrow()
+```

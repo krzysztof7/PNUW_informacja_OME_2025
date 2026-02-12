@@ -1,0 +1,883 @@
+---
+title: "05_OME_yes_no"
+author: "KP"
+date: "2025-12-02"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,        # ukrywa kod
+  warning = FALSE,     # ukrywa ostrzeżenia
+  message = FALSE,     # ukrywa komunikaty
+  error = FALSE        # ukrywa błędy (pokazuje puste miejsce zamiast komunikatu błędu)
+)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readxl)
+library(knitr)
+library(DT)
+library(stringr)
+library(forcats)
+library(scales)
+```
+
+# Wczytywanie i przetworzenie danych
+
+```{r}
+load("all_data.rda")
+```
+
+# 1. Przygotowanie dataframe i unikalne odpowiedzi
+```{r}
+all_ome_data <- all_data %>%
+  filter(visited_ome == "Tak") %>% 
+  select(survey_id,visits_count,main_reason,
+         place, sex, education, age, distance_zone, distance_zone2,
+         visited_ome,
+         it_staff_asked,it_staff_range,it_staff_plan_change,it_staff_what,
+         it_exhibition_asked, it_exhibition_range, it_exhibition_plan_change, it_exhibition_what)
+```
+
+
+```{r}
+unique_values_staff <- all_ome_data$it_staff_range %>%
+     na.omit() %>%                        # pomiń NA
+     strsplit(split = ";") %>%            # rozdziel po średniku
+     unlist() %>%                         # spłaszcz listę
+     trimws() %>%                         # usuń spacje z początku/końca
+     unique() 
+
+unique_values_exhibition <- all_ome_data$it_exhibition_range %>%
+     na.omit() %>%                        # pomiń NA
+     strsplit(split = ";") %>%            # rozdziel po średniku
+     unlist() %>%                         # spłaszcz listę
+     trimws() %>%                         # usuń spacje z początku/końca
+     unique() 
+```
+
+# 2. Przygotowanie kolunm zliczających
+
+Zdefiniowanie krótkich nazw
+
+```{r}
+# --- Definicja mapowania wartości na krótkie angielskie nazwy ---
+categories <- c(
+  "o otwartych szlakach/ścieżkach" = "trails",
+  "o miejscach wartych odwiedzenia" = "places",
+  "o możliwych sposobach poruszania się po Parku" = "ways_to_move",
+  "o możliwych do zaobserwowania zwierzętach" = "animals",
+  "o dostępności terenu" = "accessibility",
+  "o sposobie dotarcia do konkretnego miejsca" = "how_to_get"
+)
+```
+
+```{r}
+# --- Tworzenie kolumn binarnych ---
+all_ome_data <- all_ome_data %>%
+  mutate(
+    across(
+      .cols = everything(),   # placeholder, nie zmieniamy innych kolumn
+      .fns = list(),          # nie zmieniamy nic
+      .names = "{.col}"
+    )
+  ) %>%
+  bind_cols(
+    # użycie map2 do stworzenia wszystkich kolumn naraz
+    purrr::map_dfc(names(categories), function(cat_full) {
+      col_name <- paste0("staff_range_", categories[cat_full])
+      tibble(
+        !!col_name := as.integer(str_detect(all_ome_data$it_staff_range, fixed(cat_full)))
+      )
+    })
+  )
+
+```
+
+```{r}
+# --- Tworzenie kolumn binarnych ---
+all_ome_data <- all_ome_data %>%
+  mutate(
+    across(
+      .cols = everything(),   # placeholder, nie zmieniamy innych kolumn
+      .fns = list(),          # nie zmieniamy nic
+      .names = "{.col}"
+    )
+  ) %>%
+  bind_cols(
+    # użycie map2 do stworzenia wszystkich kolumn naraz
+    purrr::map_dfc(names(categories), function(cat_full) {
+      col_name <- paste0("exhibition_range_", categories[cat_full])
+      tibble(
+        !!col_name := as.integer(str_detect(all_ome_data$it_exhibition_range, fixed(cat_full)))
+      )
+    })
+  )
+
+```
+
+# 3. Analiza odowiedzi jako całości
+
+```{r}
+all_ome_data %>% 
+  select(starts_with("staff_range_")) %>% 
+  summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%  # średnia = odsetek 1
+  pivot_longer(cols = everything(), names_to = "category", values_to = "frequency") %>% 
+  mutate(category = fct_reorder(category, frequency)) %>%
+  ggplot(aes(x = category, y = frequency)) +
+    geom_col(fill = "steelblue") +
+    geom_text(aes(label = scales::percent(frequency, accuracy = 0.1)),
+            hjust = -0.1, size = 3.5) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(title = "Odsetek wskazań - staff",
+         x = "Kategoria",
+         y = "Odsetek respondentów (%)") +
+    theme_minimal(base_size = 12) +
+    coord_flip()
+```
+
+
+```{r}
+all_ome_data %>% 
+  select(starts_with("exhibition_range_")) %>% 
+  summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%  # średnia = odsetek 1
+  pivot_longer(cols = everything(), names_to = "category", values_to = "frequency") %>% 
+  mutate(category = fct_reorder(category, frequency)) %>%
+  ggplot(aes(x = category, y = frequency)) +
+    geom_col(fill = "steelblue") +
+    geom_text(aes(label = scales::percent(frequency, accuracy = 0.1)),
+            hjust = -0.1, size = 3.5) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(title = "Odsetek wskazań - exhibition",
+         x = "Kategoria",
+         y = "Odsetek respondentów (%)") +
+    theme_minimal(base_size = 12) +
+    coord_flip()
+```
+
+
+```{r}
+staff_data <- all_ome_data %>%
+  select(starts_with("staff_range_")) %>%
+  pivot_longer(cols = everything(),
+               names_to = "category", values_to = "value") %>%
+  mutate(
+    type = "staff",
+    category = str_remove(category, "staff_range_")   # usuwamy prefix
+  )
+
+# --- przygotowanie danych: exhibition ---
+exh_data <- all_ome_data %>%
+  select(starts_with("exhibition_range_")) %>%
+  pivot_longer(cols = everything(),
+               names_to = "category", values_to = "value") %>%
+  mutate(
+    type = "exhibition",
+    category = str_remove(category, "exhibition_range_")  # usuwamy prefix
+  )
+
+# --- połączenie danych ---
+staff_exh_data <- bind_rows(staff_data, exh_data) %>%
+  group_by(type, category) %>%
+  summarise(frequency = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(category = fct_reorder(category, frequency))
+
+ggplot(staff_exh_data, aes(x = category, y = frequency, fill = type)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = percent(frequency, accuracy = 0.1)),
+            position = position_dodge(width = 0.8), hjust = -0.1, size = 3.5) +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0,1)) +
+  labs(title = "Odsetek wskazań wg kategorii - staff i exhibition",
+       x = "Kategoria",
+       y = "Odsetek respondentów (%)",
+       fill = "Typ") +
+  theme_minimal(base_size = 12) +
+  coord_flip()
+
+```
+
+
+# 4. Analiza wg zmiennych objaśniających
+
+## płeć
+
+```{r}
+all_ome_data %>% 
+  filter(visited_ome=="Tak") %>% 
+  select(sex, starts_with("staff_range_")) %>% 
+  pivot_longer(cols = starts_with("staff_range_"), names_to = "category", values_to = "value") %>% 
+  group_by(category, sex) %>%
+  summarise(frequency = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(category = fct_reorder(category, frequency)) %>% 
+  ggplot(aes(x = category, y = frequency, fill = sex)) +
+    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    geom_text(aes(label = scales::percent(frequency, accuracy = 0.1)),
+            position = position_dodge(width = 0.8), hjust = -0.1, size = 3.5) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(title = "Odsetek wskazań - staff wg płci",
+         x = "Kategoria",
+         y = "Odsetek respondentów (%)") +
+    theme_minimal(base_size = 12) +
+    coord_flip()
+```
+
+```{r}
+all_ome_data %>% 
+  filter(visited_ome=="Tak") %>% 
+  select(sex, starts_with("exhibition_range_")) %>% 
+  pivot_longer(cols = starts_with("exhibition_range_"), names_to = "category", values_to = "value") %>% 
+  group_by(category, sex) %>%
+  summarise(frequency = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(category = fct_reorder(category, frequency)) %>% 
+  ggplot(aes(x = category, y = frequency, fill = sex)) +
+    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    geom_text(aes(label = scales::percent(frequency, accuracy = 0.1)),
+            position = position_dodge(width = 0.8), hjust = -0.1, size = 3.5) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(title = "Odsetek wskazań - exhibition wg płci",
+         x = "Kategoria",
+         y = "Odsetek respondentów (%)") +
+    theme_minimal(base_size = 12) +
+    coord_flip()
+```
+
+
+
+```{r}
+diff_sex_both <- all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(
+    sex,
+    starts_with("staff_range_"),
+    starts_with("exhibition_range_")
+  ) %>% 
+  pivot_longer(
+    cols = -sex,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_") ~ "Personel OME",
+      str_detect(variable, "^exhibition_") ~ "Wystawa OME"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(source, category, sex) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = sex, values_from = freq) %>%
+  mutate(diff = Kobieta - Mężczyzna)
+
+ggplot(
+  diff_sex_both,
+  aes(
+    x = diff,
+    y = fct_reorder(category, diff),
+    fill = source
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Różnice w zakresie informacji uzyskanych w OME wg płci",
+    subtitle = "Różnica odsetków (Kobiety – Mężczyźni)",
+    x = "Różnica odsetków (p.p.)",
+    y = "Kategoria informacji",
+    fill = "Źródło informacji"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+```{r}
+
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(sex, starts_with("staff_range_"), starts_with("exhibition_range_")) %>% 
+  pivot_longer(
+    cols = -sex,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_range_") ~ "Personel",
+      str_detect(variable, "^exhibition_range_") ~ "Wystawa"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(sex, category, source) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  
+  ggplot(aes(x = sex, y = category, fill = freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(round(freq*100,1),"%")), size = 3) +
+    scale_fill_gradient(
+      low = "white",
+      high = "darkolivegreen",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = "Zakres informacji uzyskanych w OME wg płci",
+      x = "Płeć",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    facet_wrap(~ source) +   # <--- osobny panel dla Personelu i Wystawy
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 30, hjust = 1)
+    )
+
+```
+
+
+
+## miejscowy-przyjezdny
+
+```{r}
+diff_dist_both <- all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(
+    distance_zone2,
+    starts_with("staff_range_"),
+    starts_with("exhibition_range_")
+  ) %>% 
+  pivot_longer(
+    cols = -distance_zone2,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_") ~ "Personel OME",
+      str_detect(variable, "^exhibition_") ~ "Wystawa OME"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(source, category, distance_zone2) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = distance_zone2, values_from = freq) %>%
+  mutate(diff = miejscowi - przyjezdni)
+
+ggplot(
+  diff_dist_both,
+  aes(
+    x = diff,
+    y = fct_reorder(category, diff),
+    fill = source
+  )
+) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Różnice w zakresie informacji uzyskanych w OME wg miejsca zamieszkania",
+    subtitle = "Różnica odsetków (Miejscowi – Przyjezdni)",
+    x = "Różnica odsetków (p.p.)",
+    y = "Kategoria informacji",
+    fill = "Źródło informacji"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+```{r}
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(distance_zone2, starts_with("staff_range_"), starts_with("exhibition_range_")) %>% 
+  pivot_longer(
+    cols = -distance_zone2,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_range_") ~ "Personel",
+      str_detect(variable, "^exhibition_range_") ~ "Wystawa"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(distance_zone2, category, source) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  
+  ggplot(aes(x = distance_zone2, y = category, fill = freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(round(freq*100,1),"%")), size = 3) +
+    scale_fill_gradient(
+      low = "white",
+      high = "brown4",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = "Zakres informacji uzyskanych w OME wg odległości zamieszkania",
+      x = "Odległość zamieszkania",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    facet_wrap(~ source) +   # <--- osobny panel dla Personelu i Wystawy
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 30, hjust = 1)
+    )
+```
+
+## distance_zone
+```{r}
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(distance_zone, starts_with("staff_range_"), starts_with("exhibition_range_")) %>% 
+  pivot_longer(
+    cols = -distance_zone,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_range_") ~ "Personel",
+      str_detect(variable, "^exhibition_range_") ~ "Wystawa"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(distance_zone, category, source) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  
+  ggplot(aes(x = distance_zone, y = category, fill = freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(round(freq*100,1),"%")), size = 3) +
+    scale_fill_gradient(
+      low = "white",
+      high = "darkred",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = "Zakres informacji uzyskanych w OME wg strefy odległości",
+      x = "Strefa odległości",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    facet_wrap(~ source) +   # <--- osobny panel dla Personelu i Wystawy
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 30, hjust = 1)
+    )
+```
+
+
+## wiek
+
+```{r}
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(age, starts_with("staff_range_")) %>% 
+  pivot_longer(
+    cols = starts_with("staff_range_"),
+    names_to = "category",
+    values_to = "value"
+  ) %>% 
+  group_by(age, category) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(x = age, y = category, fill = freq)) +
+    geom_tile() +
+    geom_text(aes(label = paste0(round(freq * 100, 1), "%")),) +
+    scale_fill_gradient(
+      low = "white",
+      high = "navyblue",
+      labels = scales::percent_format(accuracy = 1)
+    )+
+   
+    labs(
+      title = "Zakres informacji uzyskanych od personelu OME wg wieku",
+      x = "Grupa wiekowa",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    theme_minimal()
+```
+```{r}
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(age, starts_with("staff_range_"), starts_with("exhibition_range_")) %>% 
+  pivot_longer(
+    cols = -age,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_range_") ~ "Personel",
+      str_detect(variable, "^exhibition_range_") ~ "Wystawa"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(age, category, source) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  
+  ggplot(aes(x = age, y = category, fill = freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(round(freq*100,1),"%")), size = 3) +
+    scale_fill_gradient(
+      low = "white",
+      high = "steelblue4",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = "Zakres informacji uzyskanych w OME wg wieku",
+      x = "Grupa wiekowa",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    facet_wrap(~ source) +   # <--- osobny panel dla Personelu i Wystawy
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 30, hjust = 1)
+    )
+```
+
+## liczba wizyt w Parku
+
+```{r}
+
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(visits_count, starts_with("staff_range_"), starts_with("exhibition_range_")) %>% 
+  pivot_longer(
+    cols = -visits_count,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_range_") ~ "Personel",
+      str_detect(variable, "^exhibition_range_") ~ "Wystawa"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(visits_count, category, source) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  
+  ggplot(aes(x = visits_count, y = category, fill = freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(round(freq*100,1),"%")), size = 3) +
+    scale_fill_gradient(
+      low = "white",
+      high = "darkorchid4",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = "Zakres informacji uzyskanych w OME wg liczby wizyt",
+      x = "Liczba wizyt",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    facet_wrap(~ source) +   # <--- osobny panel dla Personelu i Wystawy
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 30, hjust = 1)
+    )
+```
+
+
+## główny cel przyjazdu
+
+```{r}
+
+all_ome_data %>% 
+  filter(visited_ome == "Tak") %>% 
+  select(main_reason, starts_with("staff_range_"), starts_with("exhibition_range_")) %>% 
+  pivot_longer(
+    cols = -main_reason,
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    source = case_when(
+      str_detect(variable, "^staff_range_") ~ "Personel",
+      str_detect(variable, "^exhibition_range_") ~ "Wystawa"
+    ),
+    category = str_remove(variable, "^(staff_range_|exhibition_range_)")
+  ) %>% 
+  group_by(main_reason, category, source) %>%
+  summarise(freq = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  
+  ggplot(aes(x = main_reason, y = category, fill = freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(round(freq*100,1),"%")), size = 3) +
+    scale_fill_gradient(
+      low = "white",
+      high = "chocolate4",
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    labs(
+      title = "Zakres informacji uzyskanych w OME wg głównego celu",
+      x = "Główny cel",
+      y = "Kategoria informacji",
+      fill = "% wskazań"
+    ) +
+    facet_wrap(~ source) +   # <--- osobny panel dla Personelu i Wystawy
+    theme_minimal(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 30, hjust = 1)
+    )
+```
+
+
+# 5. Analiza danych zagregowanych
+
+tu  nie interesuje nas czy informacja wyszła od pracownika czy z wystawy
+
+```{r}
+aggregated_ome_data <- all_ome_data %>%
+  mutate(
+    # (1) Łączenie staff_range_ + exhibition_range_
+    across(
+      starts_with("staff_range_"),
+      ~ .,
+      .names = "tmp_staff_{col}"
+    )
+  ) %>%
+  mutate(
+    across(
+      starts_with("exhibition_range_"),
+      ~ .,
+      .names = "tmp_exh_{col}"
+    )
+  ) %>%
+  # Nazwy kategorii zakresów
+  {
+    range_vars <- gsub("staff_range_", "", grep("^staff_range_", names(.), value = TRUE))
+    
+    tmp <- .
+    
+    for (v in range_vars) {
+      staff_col <- paste0("staff_range_", v)
+      exh_col   <- paste0("exhibition_range_", v)
+      new_col   <- paste0("ome_range_", v)
+      
+     tmp[[new_col]] <- ifelse(
+        dplyr::coalesce(tmp[[staff_col]], 0) == 1 |
+        dplyr::coalesce(tmp[[exh_col]], 0) == 1,
+        1,
+        0
+      )
+    }
+    tmp
+  } %>%
+  
+  # (2) it_staff_asked + it_exhibition_asked → it_ome_asked
+  mutate(
+    it_ome_asked = ifelse(it_staff_asked == "Tak" | it_exhibition_asked == "Tak", 
+                          "Tak", "Nie"),
+    it_ome_asked = factor(it_ome_asked, levels = c("Tak", "Nie"))
+  ) %>%
+  
+  # (3) Łączenie plan_change → wybór najmocniejszej zmiany (najniższy poziom faktora)
+  mutate(
+    it_ome_plan_change = pmin(
+      as.numeric(it_staff_plan_change),
+      as.numeric(it_exhibition_plan_change),
+      na.rm = TRUE
+    ),
+    it_ome_plan_change = factor(
+      it_ome_plan_change,
+      labels = levels(all_ome_data$it_staff_plan_change)
+    )
+  ) %>%
+  
+  # (4) Usunięcie kolumn źródłowych
+  select(
+    -starts_with("staff_range_"),
+    -starts_with("exhibition_range_"),
+    -it_staff_asked,
+    -it_exhibition_asked,
+    -it_staff_plan_change,
+    -it_exhibition_plan_change,
+    -it_staff_range,
+    -it_exhibition_range,
+    -it_staff_what,
+    -it_exhibition_what,
+    -starts_with("tmp_")
+    
+  )
+```
+
+```{r}
+# przygotowanie danych
+
+ome_long <- aggregated_ome_data %>%
+  pivot_longer(
+    cols = starts_with("ome_range_"),
+    names_to = "ome_topic",
+    values_to = "value"
+  ) %>%
+  mutate(
+    ome_topic = factor(
+      ome_topic,
+      levels = c(
+        "ome_range_trails",
+        "ome_range_places",
+        "ome_range_ways_to_move",
+        "ome_range_animals",
+        "ome_range_accessibility",
+        "ome_range_how_to_get"
+      )
+    )
+  )
+
+# funkcja wykres
+plot_ome_by <- function(data, group_var) {
+  group_var <- rlang::sym(group_var) 
+  
+  data %>%
+    group_by(!!group_var, ome_topic) %>%
+    summarise(
+      freq = mean(value, na.rm = TRUE),
+      n = n(),
+      .groups = "drop"
+    ) %>%
+    ggplot(aes(x = ome_topic, y = freq, fill = !!group_var)) +
+    geom_text(
+      aes(label = scales::percent(freq, accuracy = 0.1)),  # Format 12.3%
+      position = position_dodge(width = 0.8),
+      hjust = -0.1,        # Po lewej stronie słupka (bo coord_flip)
+      size = 3,
+    #  color = "black"
+    ) +
+    geom_col(position = position_dodge(width = 0.8)) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    labs(
+      x = rlang::as_name(group_var),
+      y = "Odsetek odpowiedzi",
+      fill = "Kategoria OME",
+      title = paste("Rozkład odpowiedzi OME względem", rlang::as_name(group_var))
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      legend.position = "bottom",
+      plot.title = element_text(face = "bold")
+    ) +
+    coord_flip()
+}
+
+# lista zmiennych
+group_vars <- c(
+  "place", "sex", "education", "age", "distance_zone", "distance_zone2",
+  "main_reason", "visits_count", "it_ome_plan_change"
+)
+
+# automat do generowania wykresów
+plots <- lapply(group_vars, function(var) {
+  plot_ome_by(ome_long, var)
+})
+
+names(plots) <- group_vars
+
+# drukowanie wykresów
+for (p in plots) print(p)
+
+
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(broom)
+
+# 1. Dane długie
+ome_long <- aggregated_ome_data %>%
+  pivot_longer(
+    cols = starts_with("ome_range_"),
+    names_to = "ome_topic",
+    values_to = "value"
+  )
+
+# 2. Funkcja do testu dla jednej zmiennej grupującej i jednego tematu OME
+test_for_group <- function(data, group_var, topic) {
+  gv <- rlang::sym(group_var)
+
+  df <- data %>%
+    filter(ome_topic == topic) %>%
+    drop_na(!!gv, value)
+
+  # tablica liczebności
+  tab <- table(df[[group_var]], df$value)
+
+  # wybór testu
+  if (nrow(tab) == 2) {
+    test <- try(prop.test(tab), silent = TRUE)
+    test_type <- "prop.test (2 grupy)"
+  } else {
+    test <- try(chisq.test(tab), silent = TRUE)
+    test_type <- "chi-square test (>2 grup)"
+  }
+
+  # jeśli error (np. 0 w komórkach) → dokładny test Fishera
+  if (inherits(test, "try-error")) {
+    test <- fisher.test(tab)
+    test_type <- paste(test_type, "+ Fisher exact (fallback)")
+  }
+
+  tidy(test) %>%
+    mutate(
+      group_var = group_var,
+      ome_topic = topic,
+      test_type = test_type
+    )
+}
+
+# 3. Lista zmiennych
+group_vars <- c(
+  "place", "sex", "education", "age", "distance_zone", "distance_zone2",
+  "main_reason", "visits_count", "it_ome_plan_change"
+)
+
+ome_topics <- unique(ome_long$ome_topic)
+
+# 4. Uruchomienie testów dla wszystkich kombinacji
+all_tests <- map_dfr(group_vars, function(gv) {
+  map_dfr(ome_topics, function(topic) {
+    test_for_group(ome_long, gv, topic)
+  })
+})
+
+# 5. Posortuj wyniki po p-value
+results <- all_tests %>%
+  arrange(p.value)
+
+
+print(results, max = nrow(results))
+
+results %>%
+  select(p.value, group_var, ome_topic, test_type) %>%
+  filter(p.value < 0.1) %>% 
+  arrange(group_var) %>% 
+   print(n = 15)
+
+```
+
+

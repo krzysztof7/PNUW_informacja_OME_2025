@@ -1,0 +1,1241 @@
+---
+title: "02_basic_analysis"
+author: "KP"
+date: "2025-10-05"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,        # ukrywa kod
+  warning = FALSE,     # ukrywa ostrzeżenia
+  message = FALSE,     # ukrywa komunikaty
+  error = FALSE        # ukrywa błędy (pokazuje puste miejsce zamiast komunikatu błędu)
+)
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(knitr)
+library(DT)
+library(tidyverse)
+```
+
+
+
+
+
+# Wczytywanie i przetworzenie danych
+
+```{r}
+load("all_data.rda")
+```
+
+
+
+
+
+# Podstawowe zestawienia
+
+**Proszący pracowników OME oraz znajdujący w trakcie zwiedzania informacje turystyczną:**
+
+```{r}
+all_data %>%
+  group_by(visited_ome, it_staff_asked, it_exhibition_asked) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(percentage = round(count / sum(count) * 100, 2)) %>%
+  arrange(desc(count))
+```
+
+(Tylko) 43% odwiedziło OME, z tego 100 os. pozyskało informację z wystawy, a 39 od pracowników. Tylko od pracowników 3, oraz żadnej 4. __Może analizować w układzie odwiedził OME vs. nie odwiedził OME__, bo jak odwiedził to prawie zawsze otrzymał informację, a już nie rozdzielać czy z wystawy czy od pracowników.
+
+
+Do sprawdzenia na przyszłość: jaka część odwiedzających OME wchodzi na wystawę (która jest biletowana), a jakiej nie uchwycą takie statytyki - więc zasadnym byłoby zliczanie ich w inny sposób.
+
+## Podsumowania tych 107 osób, którzy odwiedzili OME
+
+**Pozyskali IT od pracowników (39 os.):**
+
+```{r}
+all_data %>%
+  filter(visited_ome == "Tak", it_staff_asked == "Tak") %>%
+  count(it_staff_plan_change, name = "count") %>%
+  mutate(percentage = round(count / sum(count) * 100, 1)) 
+```
+
+
+**Pozyskali IT z ekspozycji (100 os.):**
+
+```{r}
+all_data %>%
+  filter(visited_ome == "Tak", it_exhibition_asked == "Tak") %>%
+  count(it_exhibition_plan_change, name = "count") %>%
+  mutate(percentage = round(count / sum(count) * 100, 1)) 
+```
+
+```{r}
+cross_table <- all_data %>%
+  filter(visited_ome == "Tak") %>%
+  count(it_staff_plan_change, it_exhibition_plan_change) %>%
+  complete(it_staff_plan_change, it_exhibition_plan_change, fill = list(n = 0)) %>%
+  pivot_wider(
+    names_from = it_exhibition_plan_change,
+    values_from = n
+  ) %>%
+  # Dodaj total wierszy
+  mutate(`Total (staff)` = rowSums(select(., -it_staff_plan_change), na.rm = TRUE)) %>%
+  # Dodaj total kolumn (sumy pionowe)
+  bind_rows(
+    summarise(.,
+              across(where(is.numeric), sum, na.rm = TRUE),
+              `it_staff_plan_change` = "Total (exhibition)")
+  ) %>%
+  # Ustaw nazwę pierwszej kolumny
+  rename(`Staff plan change →` = it_staff_plan_change)
+
+# Wyświetlenie tabeli w ładnej, interaktywnej formie
+datatable(
+  cross_table,
+  rownames = FALSE,
+  options = list(paging = FALSE,searching = FALSE, info = FALSE)
+)
+```
+
+
+```{r}
+all_data %>%
+  filter(visited_ome == "Tak") %>%
+  count(ome_plan_changed, name = "count") %>%
+  mutate(percentage = round(count / sum(count) * 100, 1)) 
+```
+
+Po wizycie w OME (niezależnie czy od pracowników czy z wystawy) zdanie zmieniło 20 osób (19%), w tym całkowicie zmieniły zdanie 2 osoby, częściowo 18 (17%), a zdecydowana większość (81%) planów nie zmieniła.
+
+Na tą zmianę większy wpływ wywarło zwiedzanie wystawy (18 osób), a rozmowy z pracownikami były powodem dla 6 osób. W tym dla 4 osób istotne były oba czynniki.
+
+**Do dalszych analiz są odpowiedzi jakościowe...**
+
+
+## Szlak a odwiedzanie OME
+
+```{r}
+all_data %>% 
+  count(place)
+
+all_data %>% 
+  count(place, visited_ome)
+
+all_data %>%
+  count(place, visited_ome) %>%
+  group_by(place) %>%
+  mutate(
+    percent = 100 * n / sum(n)
+  ) %>%
+  ungroup()
+```
+
+## Zestawienie map poznawczych
+
+```{r}
+all_data %>%
+  select(starts_with("m_")) %>%
+  summarise(across(everything(), ~ summary(.) ))
+```
+
+
+# Elementy
+
+## Elementy ogółem
+
+```{r}
+# podsumowanie: średnia ranga dla każdej zmiennej zaczynającej się od elements_
+summary_df <- all_data %>%
+  select(starts_with("elements_")) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "element",
+    values_to = "rank"
+  ) %>%
+  mutate(
+    # usuń prefix z nazwy zmiennej
+    element = sub("^elements_", "", element)
+  ) %>%
+  group_by(element) %>%
+  summarise(
+    mean_rank = mean(rank, na.rm = TRUE),
+    n = sum(!is.na(rank)),        # ile obserwacji użyto do średniej
+    .groups = "drop"
+  ) %>%
+  arrange(mean_rank)             # rosnąco: najmniejsza ranga (1) jako pierwsza
+
+# pokaż tabelę pomocniczą (opcjonalnie)
+print(summary_df)
+
+# wykres ggplot
+ggplot(summary_df, aes(x = reorder(element, mean_rank), y = mean_rank)) +
+  geom_col(width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Znaczenie elementów infrastruktury dla obsługi turystów",
+    x = NULL,
+    y = "Średnia ranga (wyższa = większe znaczenie)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 11)
+  )
+
+```
+
+
+## Elementy wg zmiennych zależnych
+
+```{r}
+# Bazowe przekształcenie danych - do postaci long (uwzględniono distance_zone i education)
+long_df <- all_data %>%
+  select(place, sex, age, visited_ome, distance_zone, education, starts_with("elements_")) %>%
+  pivot_longer(
+    cols = starts_with("elements_"),
+    names_to = "element",
+    values_to = "rank"
+  ) %>%
+  mutate(element = sub("^elements_", "", element))
+
+# 1️⃣ ŚREDNIA RANGA wg WIEKU ----------------------------------------
+age_df <- long_df %>%
+  group_by(age, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(age_df, aes(x = reorder(element, mean_rank), y = mean_rank, fill = age)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Znaczenie elementów infrastruktury dla obsługi turystów",
+    subtitle = "Średnia ranga wg wieku (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "YlGnBu", name = "Wiek") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 2️⃣ ŚREDNIA RANGA wg PŁCI ----------------------------------------
+sex_df <- long_df %>%
+  group_by(sex, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(sex_df, aes(x = reorder(element, mean_rank), y = mean_rank, fill = sex)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Znaczenie elementów infrastruktury dla obsługi turystów",
+    subtitle = "Średnia ranga wg płci (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Set2", name = "Płeć") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 3️⃣ ŚREDNIA RANGA wg MIEJSCA -------------------------------------
+place_df <- long_df %>%
+  group_by(place, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(place_df, aes(x = reorder(element, mean_rank), y = mean_rank, fill = place)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Znaczenie elementów infrastruktury dla obsługi turystów",
+    subtitle = "Średnia ranga wg miejsca (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Pastel1", name = "Miejsce") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 4️⃣ ŚREDNIA OCENA wg ODWIEDZENIA OME -------------------------------------
+visited_ome_df <- long_df %>%
+  group_by(visited_ome, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(visited_ome_df, aes(x = reorder(element, mean_rank), y = mean_rank, fill = visited_ome)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg odwiedzenia OME (1 = najwyżej oceniony)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Pastel2", name = "Odwiedził OME") +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 11)
+  )
+
+# 5️⃣ ŚREDNIA RANGA wg STREFY ODL. ZAMIESZKANIA (distance_zone) -------------------------------------
+distance_df <- long_df %>%
+  group_by(distance_zone, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(distance_df, aes(x = reorder(element, mean_rank), y = mean_rank, fill = distance_zone)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Znaczenie elementów infrastruktury dla obsługi turystów",
+    subtitle = "Średnia ranga wg odległości zamieszkania od parku (distance_zone)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Spectral", name = "Strefa odległości") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 6️⃣ ŚREDNIA RANGA wg WYKSZTAŁCENIA (education) -------------------------------------
+education_df <- long_df %>%
+  group_by(education, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(education_df, aes(x = reorder(element, mean_rank), y = mean_rank, fill = education)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Znaczenie elementów infrastruktury dla obsługi turystów",
+    subtitle = "Średnia ranga wg wykształcenia",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Paired", name = "Wykształcenie") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+
+```
+
+# Infrastruktura PNUW
+
+## Ocena ogólna: optymalna vs. zbyt uboga
+
+```{r}
+# 📊 ANALIZA OGRANICZONA: tylko "Zbyt uboga..." i "Optymalna"
+# Poprawiony chunk: analiza binary infrastructure_assessment (tylko 2 poziomy)
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(tibble)
+
+# Filtrujemy tylko dwie interesujące nas kategorie
+infra_subset <- all_data %>%
+  filter(infrastructure_assessment %in% c(
+    "Zbyt uboga i powinna być rozbudowana",
+    "Optymalna"
+  )) %>%
+  droplevels()
+
+group_vars <- c("sex", "age", "education", "place", "visited_ome", "distance_zone")
+
+plot_assessment_two <- function(df, var) {
+  ggplot(df, aes(x = .data[[var]], fill = infrastructure_assessment)) +
+    geom_bar(position = "fill") +
+    scale_y_continuous(labels = scales::percent_format()) +
+    labs(
+      title = "Ocena infrastruktury PNUW (tylko 2 poziomy)",
+      subtitle = paste("Rozkład odpowiedzi wg zmiennej:", var),
+      x = var,
+      y = "Udział (%)",
+      fill = "Ocena infrastruktury"
+    ) +
+    scale_fill_brewer(palette = "RdYlGn", direction = -1) +
+    theme_minimal(base_size = 13) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 20, hjust = 1)
+    )
+}
+
+chi_results_two <- list()
+
+for (var in group_vars) {
+  cat("\n\n==== Analiza zmiennej:", var, "====\n")
+  
+  # Rysujemy wykres
+  print(plot_assessment_two(infra_subset, var))
+  
+  # Tworzymy tabelę kontyngencji
+  tab <- table(infra_subset[[var]], infra_subset$infrastructure_assessment)
+  print(tab) # opcjonalnie pokaż tablicę dla kontroli
+  
+  # Wybór testu: Fisher jeśli którakolwiek komórka < 5
+  use_fisher <- any(tab < 5)
+  
+  test_res <- tryCatch({
+    if (use_fisher) {
+      fisher.test(tab)
+    } else {
+      chisq.test(tab)
+    }
+  }, error = function(e) {
+    # W razie błędu zwracamy listę z informacją o błędzie
+    list(error = TRUE, message = e$message)
+  })
+  
+  # Bezpieczne wydobycie wyników
+  if (is.list(test_res) && !isTRUE(test_res$error)) {
+    stat <- if (!is.null(test_res$statistic)) unname(test_res$statistic) else NA_real_
+    param <- if (!is.null(test_res$parameter)) unname(test_res$parameter) else NA_real_
+    pval  <- if (!is.null(test_res$p.value)) unname(test_res$p.value) else NA_real_
+    test_name <- if (use_fisher) "Fisher" else "Chi-squared"
+  } else {
+    # Błąd wykonania testu
+    stat <- NA_real_
+    param <- NA_real_
+    pval <- NA_real_
+    test_name <- paste0("ERROR: ", if (is.list(test_res) && !is.null(test_res$message)) test_res$message else "unknown")
+  }
+  
+  # Zapis wyniku
+  chi_results_two[[var]] <- tibble(
+    variable = var,
+    test = test_name,
+    statistic = stat,
+    df = param,
+    p_value = pval
+  )
+  
+  # Czytelny wydruk
+  if (!is.na(pval)) {
+    cat("Test:", test_name, "\nstat =", round(stat, 3), "df =", param, "p =", signif(pval, 4), "\n")
+  } else {
+    cat("Test nie mógł zostać wykonany:", test_name, "\n")
+  }
+}
+
+# Podsumowanie
+chi_summary_two <- bind_rows(chi_results_two) %>%
+  mutate(significant = ifelse(!is.na(p_value) & p_value < 0.05, "TAK", "nie")) %>%
+  arrange(p_value)
+
+cat("\n\n===== Podsumowanie istotności różnic (2 poziomy) =====\n")
+print(chi_summary_two)
+
+
+```
+
+#### Distance_zone - tylko 2 grupy: przyjezdni i miejscowi
+
+```{r}
+# Analiza tylko dla distance_zone (1 = miejscowi, 2/3/4 = przyjezdni)
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(rstatix)  # dla cramers_v
+
+# 1) Przygotowanie podzbioru (tylko 2 interesujące poziomy oceny)
+infra_subset <- all_data %>%
+  filter(infrastructure_assessment %in% c(
+    "Zbyt uboga i powinna być rozbudowana",
+    "Optymalna"
+  )) %>%
+  droplevels()
+
+# 2) Rekodowanie distance_zone: 1 -> miejscowi, 2/3/4 -> przyjezdni
+infra_subset <- infra_subset %>%
+  mutate(
+    distance_cat = case_when(
+      distance_zone == 1 ~ "miejscowi",
+      distance_zone %in% c(2,3,4) ~ "przyjezdni",
+      TRUE ~ NA_character_
+    ),
+    distance_cat = factor(distance_cat, levels = c("miejscowi", "przyjezdni"))
+  ) %>%
+  filter(!is.na(distance_cat))  # usuń brakujące po rekodowaniu
+
+# 3) Wykres procentowy rozkładu ocen wg distance_cat
+p <- ggplot(infra_subset, aes(x = distance_cat, fill = infrastructure_assessment)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Ocena infrastruktury PNUW — miejscowi vs przyjezdni",
+    subtitle = "Tylko kategorie: 'Zbyt uboga...' oraz 'Optymalna'",
+    x = NULL,
+    y = "Udział (%)",
+    fill = "Ocena infrastruktury"
+  ) +
+  scale_fill_brewer(palette = "RdYlGn", direction = -1) +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+print(p)
+
+# 4) Tabela kontyngencji
+tab <- table(infra_subset$distance_cat, infra_subset$infrastructure_assessment)
+print(tab)
+
+# 5) Wybór testu: Fisher jeśli którakolwiek komórka < 5, inaczej Chi-squared
+use_fisher <- any(tab < 5)
+
+test_res <- tryCatch({
+  if (use_fisher) {
+    fisher.test(tab)
+  } else {
+    chisq.test(tab)
+  }
+}, error = function(e) {
+  list(error = TRUE, message = e$message)
+})
+
+# 6) Bezpieczne wydobycie wyników testu + Cramér's V
+if (is.list(test_res) && !isTRUE(test_res$error)) {
+  test_name <- if (use_fisher) "Fisher" else "Chi-squared"
+  stat <- if (!is.null(test_res$statistic)) unname(test_res$statistic) else NA_real_
+  param <- if (!is.null(test_res$parameter)) unname(test_res$parameter) else NA_real_
+  pval <- if (!is.null(test_res$p.value)) unname(test_res$p.value) else NA_real_
+  
+  cat("\nTest:", test_name, "\nstat =", stat, "df =", param, "p =", signif(pval, 6), "\n")
+  
+  # Cramer's V (miara siły związku)
+  cramers <- tryCatch(
+    rstatix::cramer_v(tab),
+    error = function(e) NA_real_
+  )
+  cat("Cramér's V =", signif(cramers, 4), "\n")
+  
+  # Zwróć tabelę wyników jako tibble
+  result_summary <- tibble(
+    variable = "distance_cat",
+    test = test_name,
+    statistic = stat,
+    df = param,
+    p_value = pval,
+    cramers_v = cramers
+  )
+} else {
+  cat("\nTest nie mógł zostać wykonany. Błąd:", if (is.list(test_res) && !is.null(test_res$message)) test_res$message else "unknown", "\n")
+  result_summary <- tibble(
+    variable = "distance_cat",
+    test = NA_character_,
+    statistic = NA_real_,
+    df = NA_real_,
+    p_value = NA_real_,
+    cramers_v = NA_real_
+  )
+}
+
+print(result_summary)
+
+```
+
+
+
+## PNUW ogółem
+
+```{r}
+# podsumowanie: średnia ranga dla każdej zmiennej zaczynającej się od pnuw_
+summary_pnuw <- all_data %>%
+  select(starts_with("pnuw_")) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "element",
+    values_to = "rank"
+  ) %>%
+  mutate(
+    # usuń prefix z nazwy zmiennej
+    element = sub("^pnuw_", "", element)
+  ) %>%
+  group_by(element) %>%
+  summarise(
+    mean_rank = mean(rank, na.rm = TRUE),
+    n = sum(!is.na(rank)),        # liczba odpowiedzi użytych do średniej
+    .groups = "drop"
+  ) %>%
+  arrange(mean_rank)              # mniejsza ranga (1) = lepsza ocena
+
+# podgląd tabeli (opcjonalnie)
+print(summary_pnuw)
+
+# wykres ggplot
+ggplot(summary_pnuw, aes(x = reorder(element, mean_rank), y = mean_rank)) +
+  geom_col(width = 0.7, fill = "#0072B2") +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    x = NULL,
+    y = "Średnia ranga (wyższa = większe znaczenie)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 11)
+  )
+
+
+```
+
+
+## PNUW wg zmiennych
+
+```{r}
+# Przygotowanie danych (uwzględniono distance_zone i education)
+pnuw_long <- all_data %>%
+  select(place, sex, age, visited_ome, distance_zone, education, starts_with("pnuw_")) %>%
+  pivot_longer(
+    cols = starts_with("pnuw_"),
+    names_to = "element",
+    values_to = "rank"
+  ) %>%
+  mutate(element = sub("^pnuw_", "", element))
+
+# 1️⃣ ŚREDNIA OCENA wg WIEKU ----------------------------------------
+pnuw_age <- pnuw_long %>%
+  group_by(age, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_age, aes(x = reorder(element, mean_rank), y = mean_rank, fill = age)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg wieku (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "YlGnBu", name = "Wiek") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 2️⃣ ŚREDNIA OCENA wg PŁCI ----------------------------------------
+pnuw_sex <- pnuw_long %>%
+  group_by(sex, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_sex, aes(x = reorder(element, mean_rank), y = mean_rank, fill = sex)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg płci (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Set2", name = "Płeć") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 3️⃣ ŚREDNIA OCENA wg MIEJSCA -------------------------------------
+pnuw_place <- pnuw_long %>%
+  group_by(place, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = place)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg miejsca (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Pastel1", name = "Miejsce") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 4️⃣ ŚREDNIA OCENA wg ODWIEDZENIA OME -------------------------------------
+pnuw_visited <- pnuw_long %>%
+  group_by(visited_ome, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_visited, aes(x = reorder(element, mean_rank), y = mean_rank, fill = visited_ome)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg odwiedzenia OME (1 = najwyżej oceniony)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Pastel2", name = "Odwiedził OME") +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 11)
+  )
+
+# 5️⃣ ŚREDNIA OCENA wg STREFY ODL. ZAMIESZKANIA (distance_zone) -------------------------------------
+pnuw_distance <- pnuw_long %>%
+  group_by(distance_zone, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_distance, aes(x = reorder(element, mean_rank), y = mean_rank, fill = distance_zone)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg odległości zamieszkania od parku (distance_zone)",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Spectral", name = "Strefa odległości") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+# 6️⃣ ŚREDNIA OCENA wg WYKSZTAŁCENIA (education) -------------------------------------
+pnuw_education <- pnuw_long %>%
+  group_by(education, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_education, aes(x = reorder(element, mean_rank), y = mean_rank, fill = education)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Ocena elementów infrastruktury PNUW",
+    subtitle = "Średnia ranga wg wykształcenia",
+    x = NULL,
+    y = "Średnia ranga"
+  ) +
+  scale_fill_brewer(palette = "Paired", name = "Wykształcenie") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+
+```
+
+### Testy statystyczne
+
+Ponieważ rangi są danymi porządkowymi (ordinalnymi), a zmienne niezależne to kategorie (wiek, płeć, miejsce, itp.), zastosujemy testy nieparametryczne:
+
+- Kruskal–Wallis — test główny dla więcej niż 2 grup,
+
+- Dunn post hoc test z korektą Bonferroniego lub Holm, jeśli wynik Kruskala jest istotny.
+
+- Wilcoxon rank-sum test dla zmiennych binarnych (np. płeć, odwiedzenie OME, jeśli są tylko 2 poziomy).
+
+```{r}
+# ANALIZA ISTOTNOŚCI RÓŻNIC W OCENACH ELEMENTÓW INFRASTRUKTURY PNUW
+# (do uruchomienia po przygotowaniu pnuw_long)
+
+
+library(dplyr)
+library(rstatix)  # kruskal_test, dunn_test, wilcox_test, etc.
+library(FSA)      # alternatywnie dunnTest, ale tu użyjemy rstatix::dunn_test
+library(tidyr)
+
+group_vars <- c("age", "sex", "place", "visited_ome", "distance_zone", "education")
+
+all_results <- list()
+posthoc_all <- list()
+
+for (var in group_vars) {
+  cat("\n\n==== Analiza zmiennej:", var, "====\n")
+  
+  # dla każdego elementu obliczamy test główny
+  var_res <- pnuw_long %>%
+    group_by(element) %>%
+    do({
+      df_elem <- .
+      # utwórz kolumnę 'group' z analizowanej zmiennej (bez użycia .data w formule)
+      df_elem <- df_elem %>% mutate(group = as.factor( !!rlang::sym(var) ))
+      
+      # ile unikalnych poziomów (po usunięciu NA)?
+      n_gr <- nlevels(droplevels(df_elem$group))
+      
+      # jeśli mniej niż 2 poziomy -> brak testu
+      if (n_gr < 2) {
+        tibble(test = NA_character_, element = unique(df_elem$element), p_value = NA_real_, method = "brak_grup")
+      } else if (n_gr == 2) {
+        # Wilcoxon / Mann-Whitney U
+        wt <- wilcox.test(rank ~ group, data = df_elem)
+        tibble(test = "Wilcoxon", element = unique(df_elem$element), p_value = wt$p.value, method = "wilcox")
+      } else {
+        # Kruskal-Wallis
+        kt <- kruskal.test(rank ~ group, data = df_elem)
+        tibble(test = "Kruskal-Wallis", element = unique(df_elem$element), p_value = kt$p.value, method = "kruskal")
+      }
+    }) %>%
+    ungroup()
+  
+  # korekta p-value (Holm) w obrębie danej zmiennej across wszystkie elementy
+  var_res <- var_res %>%
+    mutate(p_adj = p.adjust(p_value, method = "holm"),
+           significant = ifelse(!is.na(p_adj) & p_adj < 0.05, TRUE, FALSE),
+           variable = var) %>%
+    select(variable, everything())
+  
+  all_results[[var]] <- var_res
+  print(var_res %>% filter(!is.na(p_value)))
+  
+  # POST-HOC dla istotnych elementów (tylko tam gdzie metoda = kruskal i p_adj < 0.05)
+  sig_elems <- var_res %>% filter(significant == TRUE & method == "kruskal") %>% pull(element)
+  
+  if (length(sig_elems) > 0) {
+    posthoc_list <- list()
+    for (elem in sig_elems) {
+      df_sub <- pnuw_long %>%
+        filter(element == elem) %>%
+        mutate(group = as.factor( !!rlang::sym(var) )) %>%
+        drop_na(group, rank)
+      
+      # upewnij się, że są przynajmniej 2 obserwacje w każdej grupie
+      counts <- table(df_sub$group)
+      if (length(counts) < 2 || any(counts < 2)) {
+        posthoc_list[[elem]] <- tibble(element = elem, comparison = NA_character_, p.adj = NA_real_, warning = "mało danych w grupach")
+        next
+      }
+      
+      # Dunn post-hoc z korektą Holm (rstatix::dunn_test)
+      dunn_res <- tryCatch(
+        {
+          rstatix::dunn_test(df_sub, rank ~ group, p.adjust.method = "holm") %>%
+            rename(comparison = group1) %>% # rstatix zwraca group1/group2/..., ale zachowamy format
+            mutate(element = elem)
+        },
+        error = function(e) {
+          # w razie problemu zwróć komunikat
+          tibble(element = elem, group1 = NA_character_, group2 = NA_character_, statistic = NA_real_,
+                 p = NA_real_, p.adj = NA_real_, p.adj.signif = NA_character_, warning = paste("dunn error:", e$message))
+        }
+      )
+      
+      posthoc_list[[elem]] <- dunn_res
+    }
+    # połącz wyniki post-hoc tej zmiennej
+    posthoc_all[[var]] <- bind_rows(posthoc_list)
+    # pokaż tylko istotne porównania
+    if (nrow(posthoc_all[[var]]) > 0) {
+      cat("-> Post-hoc (Dunn) — istotne porównania (p.adj < 0.05):\n")
+      print(posthoc_all[[var]] %>% filter(p.adj < 0.05))
+    } else {
+      cat("-> Brak wyników post-hoc dla tej zmiennej.\n")
+    }
+  } else {
+    cat("-> Brak istotnych wyników Kruskal dla tej zmiennej — pomijam post-hoc.\n")
+  }
+}
+
+# Scal wszystkie wyniki główne do jednej tabeli
+main_tests_all <- bind_rows(all_results)
+# Scal wszystkie post-hoc (jeżeli istnieją)
+posthoc_all_df <- if (length(posthoc_all) > 0) bind_rows(posthoc_all, .id = "variable") else tibble()
+
+# Zapisz/wyświetl podsumowanie
+cat("\n\n===== Podsumowanie istotnych wyników (główne testy) =====\n")
+print(main_tests_all %>% filter(significant == TRUE) %>% arrange(variable, p_adj))
+
+cat("\n\n===== Podsumowanie post-hoc (wszystkie) =====\n")
+print(posthoc_all_df)
+
+
+```
+
+
+## Proponowane zmiany w infrastrukturze
+
+110 osób nie chce zmian, a 139 zaproponowało zmiany. Z opisów tych zmian w toku analizy wyznaczono kilka kategorii zmian: 
+
+```{r}
+
+all_data %>% 
+  select(starts_with("chan_"), infra_change_suggested) %>% 
+  filter(infra_change_suggested != "nic") %>% 
+  mutate(across(everything(), ~replace(., is.na(.),0))) %>% 
+  select(-infra_change_suggested) %>% 
+  sapply(mean) %>% 
+  data.frame(means = .) %>% 
+  rownames_to_column(var="WhatToChange") %>% 
+  mutate(WhatToChange = sub("^chan_", "", WhatToChange)) %>% 
+  ggplot(aes(x = reorder(WhatToChange, means), y = means))+
+    geom_bar(stat = "identity")+
+    geom_text(aes(label = round(means, 3)), hjust = -0.1)+
+    coord_flip()+
+    theme_minimal() +
+    labs(
+      title = "Odsetek spośród wszystkich sugerujących zmiany, aby zmienić:",
+      x = "Elementy do zmiany",
+      y = "Odsetek"
+    )
+
+```
+
+
+# Odwiedziny w OME a inne zmienne
+
+## Cel wizyty
+
+```{r}
+# oblicz udział procentowy dla main_reason wg visited_ome
+reason_summary <- all_data %>%
+  count(visited_ome, main_reason) %>%
+  group_by(visited_ome) %>%
+  mutate(percent = 100 * n / sum(n)) %>%
+  ungroup()
+
+# kolejność powodów wg łącznego udziału (malejąco)
+reason_order <- reason_summary %>%
+  group_by(main_reason) %>%
+  summarise(total_percent = sum(percent)) %>%
+  arrange(desc(total_percent)) %>%
+  pull(main_reason)
+
+# wykres poziomy z etykietami
+ggplot(reason_summary, aes(x = factor(main_reason, levels = reason_order), 
+                           y = percent, fill = visited_ome)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", percent)), 
+            position = position_dodge(width = 0.8),
+            hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  labs(
+    title = "Główny powód wizyty a odwiedzenie OME",
+    x = NULL,
+    y = "Udział procentowy",
+    fill = "Odwiedził OME"
+  ) +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 11)
+  ) +
+  expand_limits(y = max(reason_summary$percent) + 5)  # miejsce na etykiety
+
+```
+
+Test statystyczny
+
+```{r}
+tab <- table(all_data$visited_ome, all_data$main_reason)
+chisq.test(tab)
+fisher.test(tab)
+```
+
+```{r}
+pairwise.prop.test(
+  x = tab[1, ],        # liczby "Tak"
+  n = colSums(tab),    # suma Tak+Nie
+  p.adjust.method = "bonferroni"
+)
+```
+
+P-value zdecydowanie większa od 0,05, czyli nie stwierdzono istotnych różnic
+
+## Czas podjęcia decyzji o odwiedzeniu szlaku
+
+```{r}
+# oblicz udział procentowy dla trail_decision_time wg visited_ome
+reason_summary <- all_data %>%
+  count(visited_ome, trail_decision_time) %>%
+  group_by(visited_ome) %>%
+  mutate(percent = 100 * n / sum(n)) %>%
+  ungroup()
+
+# kolejność powodów wg łącznego udziału (malejąco)
+reason_order <- reason_summary %>%
+  group_by(trail_decision_time) %>%
+  summarise(total_percent = sum(percent)) %>%
+  arrange(desc(total_percent)) %>%
+  pull(trail_decision_time)
+
+# wykres poziomy z etykietami
+ggplot(reason_summary, aes(x = factor(trail_decision_time, levels = reason_order), 
+                           y = percent, fill = visited_ome)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", percent)), 
+            position = position_dodge(width = 0.8),
+            hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  labs(
+    title = "Czas podjęcia decyzji o wizycie na szlaku a odwiedzenie OME",
+    x = NULL,
+    y = "Udział procentowy",
+    fill = "Odwiedził OME"
+  ) +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 11)
+  ) +
+  expand_limits(y = max(reason_summary$percent) + 5)  # miejsce na etykiety
+```
+
+Test statystyczny
+
+```{r}
+tab <- table(all_data$visited_ome, all_data$trail_decision_time)
+chisq.test(tab)
+fisher.test(tab)
+```
+
+```{r}
+pairwise.prop.test(
+  x = tab[1, ],        # liczby "Tak"
+  n = colSums(tab),    # suma Tak+Nie
+  p.adjust.method = "bonferroni"
+)
+```
+
+Istotne statystycznie różnice występuja w przypadku ...
+
+# Odwiedzający OME w świetle innych zmiennych
+
+```{r}
+# Analizy: visited_ome (zmienna objaśniana) ~ sex, age, education, place, distance_zone
+
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(tibble)
+library(rstatix)  # dla cramer_v
+
+# Upewnij się, że all_data jest w pamięci (load("all_data.rda") jeśli potrzeba)
+
+# Wybór zmiennych objaśniających
+
+explanatory_vars <- c("sex", "age", "education", "place", "distance_zone", "distance_zone2")
+
+# Przygotowanie zbioru: usuń wiersze bez visited_ome
+
+df <- all_data %>%
+select(all_of(c("visited_ome", explanatory_vars))) %>%
+mutate(visited_ome = as.factor(visited_ome)) %>%
+drop_na(visited_ome)  # jeśli chcesz zachować NA, usuń tę linię
+
+# Funkcja rysująca wykres i drukująca tabelę + testy
+
+analyze_and_plot <- function(data, expl_var) {
+cat("\n\n====================\nAnaliza:", expl_var, "-> visited_ome\n====================\n")
+
+# upewnij się, że zmienna objaśniająca jest faktorem
+
+data <- data %>% mutate(group = as.factor(.data[[expl_var]]))
+
+# Wykres: procentowy rozkład visited_ome w grupach
+
+p <- ggplot(data, aes(x = group, fill = visited_ome)) +
+geom_bar(position = "fill", width = 0.8) +
+scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+labs(
+title = paste("Rozkład visited_ome wg", expl_var),
+subtitle = "Udział każdej kategorii visited_ome w grupach",
+x = expl_var,
+y = "Udział (%)",
+fill = "visited_ome"
+) +
+theme_minimal(base_size = 13) +
+theme(plot.title = element_text(face = "bold"), axis.text.x = element_text(angle = 20, hjust = 1))
+
+print(p)
+
+# Tabela kontyngencji (liczebność)
+
+tab <- table(data$group, data$visited_ome, useNA = "ifany")
+cat("\nTabela kontyngencji (liczebności):\n")
+print(tab)
+
+# Wybór testu: Fisher jeśli którakolwiek komórka < 5
+
+use_fisher <- any(tab < 5, na.rm = TRUE)
+
+test_res <- tryCatch({
+if (use_fisher) fisher.test(tab) else chisq.test(tab)
+}, error = function(e) {
+list(error = TRUE, message = e$message)
+})
+
+# Bezpieczne wydobycie wyników testu
+
+if (is.list(test_res) && !isTRUE(test_res$error)) {
+stat <- if (!is.null(test_res$statistic)) unname(test_res$statistic) else NA_real_
+param <- if (!is.null(test_res$parameter)) unname(test_res$parameter) else NA_real_
+pval <- if (!is.null(test_res$p.value)) unname(test_res$p.value) else NA_real_
+test_name <- if (use_fisher) "Fisher exact test" else "Chi-squared test"
+} else {
+stat <- NA_real_; param <- NA_real_; pval <- NA_real_
+test_name <- paste0("ERROR: ", if (is.list(test_res) && !is.null(test_res$message)) test_res$message else "unknown")
+}
+
+# Cramer's V (jeśli da się policzyć)
+
+cramers <- tryCatch({
+# rstatix::cramer_v przyjmuje tabelę
+rstatix::cramer_v(tab)
+}, error = function(e) NA_real_)
+
+# Wydruk wyników testów
+
+cat("\nWynik testu:\n")
+if (!is.na(pval)) {
+cat(test_name, "\nstat =", round(stat, 4), " df =", param, " p =", signif(pval, 4), "\n")
+} else {
+cat("Test nie mógł zostać wykonany:", test_name, "\n")
+}
+cat("Cramér's V =", ifelse(!is.na(cramers), signif(cramers, 4), "NA"), "\n")
+
+# Zwróć listę z wynikami (opcjonalne do dalszego zbierania)
+
+tibble(
+explanatory = expl_var,
+test = test_name,
+statistic = stat,
+df = param,
+p_value = pval,
+cramers_v = ifelse(is.na(cramers), NA_real_, cramers)
+)
+}
+
+# Pętla wykonująca analizę dla każdej zmiennej objaśniającej i zapisująca wyniki
+
+all_results <- list()
+for (v in explanatory_vars) {
+res <- analyze_and_plot(df %>% drop_na(.data[[v]]), v)  # filtruj NA w zmiennej objaśniającej
+all_results[[v]] <- res
+}
+
+# Podsumowanie wyników w tabeli
+
+results_df <- bind_rows(all_results)
+cat("\n\n===== Podsumowanie testów (wszystkie zmienne) =====\n")
+print(results_df)
+
+```
+
+## Porównanie odwiedzających OME z nieodwiedzajacymi
+
+
+```{r analyze_visited_ome, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(tibble)
+library(rstatix)
+library(scales)
+
+# ============================
+# Funkcja analizy i wizualizacji
+# ============================
+
+analyze_and_plot <- function(data, expl_var) {
+  cat("\n\n====================\nAnaliza:", expl_var, "-> visited_ome\n====================\n")
+
+  # upewnij się, że zmienna objaśniająca jest faktorem
+  data <- data %>% mutate(group = as.factor(.data[[expl_var]]))
+
+  # Oblicz procenty dla każdej kombinacji visited_ome × group
+  df_summary <- data %>%
+    count(visited_ome, group) %>%
+    group_by(visited_ome) %>%
+    mutate(percent = n / sum(n) * 100)
+
+  # Wykres: udział zmiennej objaśniającej w grupach visited_ome
+  p <- ggplot(df_summary, aes(x = visited_ome, y = percent, fill = group)) +
+    geom_col(width = 0.8, position = "fill") +
+    geom_text(
+      aes(label = paste0(round(percent, 1), "%")),
+      position = position_fill(vjust = 0.5),
+      size = 4,
+      color = "white"
+    ) +
+    scale_y_continuous(labels = percent_format(accuracy = 1)) +
+    labs(
+      title = paste("Udział", expl_var, "w grupach visited_ome"),
+      subtitle = "Każdy słupek pokazuje rozkład zmiennej objaśniającej wśród odwiedzających i nieodwiedzających OME",
+      x = "visited_ome",
+      y = "Udział (%)",
+      fill = expl_var
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 0, hjust = 0.5)
+    )
+
+  print(p)
+
+  # Tabela kontyngencji
+  tab <- table(data$group, data$visited_ome, useNA = "ifany")
+  cat("\nTabela kontyngencji (liczebności):\n")
+  print(tab)
+
+  # Wybór testu: Fisher jeśli którakolwiek komórka < 5
+  use_fisher <- any(tab < 5, na.rm = TRUE)
+  test_res <- tryCatch({
+    if (use_fisher) fisher.test(tab) else chisq.test(tab)
+  }, error = function(e) {
+    list(error = TRUE, message = e$message)
+  })
+
+  # Bezpieczne wydobycie wyników testu
+  if (is.list(test_res) && !isTRUE(test_res$error)) {
+    stat <- if (!is.null(test_res$statistic)) unname(test_res$statistic) else NA_real_
+    param <- if (!is.null(test_res$parameter)) unname(test_res$parameter) else NA_real_
+    pval <- if (!is.null(test_res$p.value)) unname(test_res$p.value) else NA_real_
+    test_name <- if (use_fisher) "Fisher exact test" else "Chi-squared test"
+  } else {
+    stat <- NA_real_; param <- NA_real_; pval <- NA_real_
+    test_name <- paste0("ERROR: ", if (is.list(test_res) && !is.null(test_res$message)) test_res$message else "unknown")
+  }
+
+  # Cramér's V
+  cramers <- tryCatch({
+    rstatix::cramer_v(tab)
+  }, error = function(e) NA_real_)
+
+  # Wyniki testu
+  cat("\nWynik testu:\n")
+  if (!is.na(pval)) {
+    cat(test_name, "\nstat =", round(stat, 4), " df =", param, " p =", signif(pval, 4), "\n")
+  } else {
+    cat("Test nie mógł zostać wykonany:", test_name, "\n")
+  }
+  cat("Cramér's V =", ifelse(!is.na(cramers), signif(cramers, 4), "NA"), "\n")
+
+  # Zwróć wyniki w formie tabeli
+  tibble(
+    explanatory = expl_var,
+    test = test_name,
+    statistic = stat,
+    df = param,
+    p_value = pval,
+    cramers_v = ifelse(is.na(cramers), NA_real_, cramers)
+  )
+}
+
+# ============================
+# Wykonanie analizy dla wszystkich zmiennych
+# ============================
+
+explanatory_vars <- c("sex", "age", "education", "place", "distance_zone", "distance_zone2")
+
+df <- all_data %>%
+  select(all_of(c("visited_ome", explanatory_vars))) %>%
+  mutate(visited_ome = as.factor(visited_ome)) %>%
+  drop_na(visited_ome)
+
+# Wykonanie analizy i zapis wyników
+all_results <- list()
+for (v in explanatory_vars) {
+  res <- analyze_and_plot(df %>% drop_na(.data[[v]]), v)
+  all_results[[v]] <- res
+}
+
+# Podsumowanie wszystkich testów
+results_df <- bind_rows(all_results)
+cat("\n\n===== Podsumowanie testów (wszystkie zmienne) =====\n")
+print(results_df)
+
+```
+
+
+
+

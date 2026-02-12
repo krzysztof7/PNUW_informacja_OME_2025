@@ -1,0 +1,876 @@
+---
+title: "03_map_data"
+author: "KP"
+date: "2025-10-05"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,        # ukrywa kod
+  warning = FALSE,     # ukrywa ostrzeżenia
+  message = FALSE,     # ukrywa komunikaty
+  error = FALSE        # ukrywa błędy (pokazuje puste miejsce zamiast komunikatu błędu)
+)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(gt)
+library(tidyr)
+library(psych)
+# pakiety (odkomentuj instalację jeśli potrzeba)
+
+library(vegan)     # vegdist (Jaccard)
+    # tetrachoric
+library(cluster)
+```
+
+
+```{r}
+load("all_data.rda")
+
+all_map_data <- all_data %>% 
+  select(starts_with("m_")) %>% 
+  filter(!is.na(m_scale))
+ 
+```
+
+```{r}
+# zamiana na tablicę binarną (tylko 0 i 1)
+all_map_data_bin <- all_map_data %>%
+  select(-m_landmark_chimney) %>%  #usunięto zmienną, bo odpowiedzi były tylko i wyłącznie nie
+  mutate(across(everything(), ~ ifelse(. %in% c("tak", "duża"), 1L,
+                                 ifelse(. %in% c("nie", "mała"), 0L, .))))
+```
+
+
+```{r}
+# Example: compute mean for each numeric variable
+mean_data <- all_map_data_bin %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Mean")
+
+# Check the resulting data
+print(mean_data)
+
+# Plot with ggplot2
+ggplot(mean_data, aes(x = reorder(Variable, Mean), y = Mean)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +  # flip for better readability
+  labs(
+    title = "Mean Value of Each Variable",
+    x = "Variable",
+    y = "Mean"
+  ) +
+  theme_minimal()
+```
+
+# korelacje
+
+```{r}
+# 1. Oblicz korelację (dla wszystkich kolumn)
+cor_mat <- cor(all_map_data_bin, use = "pairwise.complete.obs", method = "pearson")
+
+# 2. (opcjonalnie) posortuj zmienne wg podobieństwa (klastrowanie)
+hc <- hclust(dist(1 - cor_mat))  # im większa korelacja, tym mniejszy dystans
+var_order <- hc$labels[hc$order]
+cor_mat <- cor_mat[var_order, var_order]
+
+# 3. Zamiana macierzy na format "long"
+cor_long <- as.data.frame(as.table(cor_mat))
+colnames(cor_long) <- c("Var1", "Var2", "Correlation")
+
+# 4. Heatmapa w ggplot2
+ggplot(cor_long, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red", midpoint = 0,
+    limit = c(-1, 1), name = "Korelacja (φ)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 70, vjust = 1, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 8),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_fixed() +
+  labs(title = "Macierz korelacji między elementami mapy",
+       subtitle = "Dane binarne: 1 = zaznaczone / 0 = nie zaznaczone")
+```
+
+
+## Analiza klastrów
+
+```{r}
+
+# --------------------------
+# 0. Zakładam, że masz już:
+# raw_map_data_bin  - wszystkie kolumny (w tym m_scale) zakodowane jako 0/1
+# --------------------------
+
+# 1) Konwersja na macierz numeryczną (upewnienie się)
+mat <- as.data.frame(lapply(all_map_data_bin, function(x) as.numeric(as.character(x))))
+# zachowaj nazwy zmiennych
+vars <- colnames(mat)
+
+# ----- A. Klastrowanie ZMIENNYCH - metoda JACCARD (na transponowanej macierzy) -----
+# vegdist działa na wierszach = obserwacjach, więc transponujemy macierz (zmienne jako wiersze)
+dist_vars_jaccard <- vegdist(t(as.matrix(mat)), method = "jaccard", binary = TRUE)
+
+# hierarchiczne klastrowanie (zmienne)
+hc_vars_jaccard <- hclust(dist_vars_jaccard, method = "ward.D2")
+
+# wykres dendrogramu
+plot(hc_vars_jaccard, main = "Dendrogram zmiennych (Jaccard)", xlab = "", sub = "",  horiz = TRUE)
+
+# przypisanie zmiennych do klastrów (np. k = 4, zmień jeśli chcesz)
+k_vars <- 4
+vars_clusters_jaccard <- cutree(hc_vars_jaccard, k = k_vars)
+table(vars_clusters_jaccard)
+
+# lista zmiennych w klastrach
+split(names(vars_clusters_jaccard), vars_clusters_jaccard)
+
+# ----- B. Klastrowanie ZMIENNYCH - metoda TETRACHORICZNA (korelacje) -----
+# tetrachoric wymaga macierzy/ramki 0/1
+tet <- tetrachoric(mat)   # może zgłaszać ostrzeżenia przy rzadkich kombinacjach
+cor_tetra <- tet$rho      # macierz korelacji tetrachoricznej
+
+# utwórz dystans jako 1 - korelacja (można też użyć 1 - abs(cor_tetra) w zależności od celu)
+dist_vars_tetra <- as.dist(1 - cor_tetra)
+
+hc_vars_tetra <- hclust(dist_vars_tetra, method = "ward.D2")
+plot(hc_vars_tetra, main = "Dendrogram zmiennych (tetrachoric)", xlab = "", sub = "",  horiz = TRUE)
+
+# przypisanie do klastrów (użyj tego samego k lub innego)
+vars_clusters_tetra <- cutree(hc_vars_tetra, k = k_vars)
+table(vars_clusters_tetra)
+split(names(vars_clusters_tetra), vars_clusters_tetra)
+
+# ----- C. Heatmapa korelacji tetrachoricznej uporządkowana wg dendrogramu (ggplot2) -----
+# wybierz porządek zmiennych wg dendrogramu (tutaj użyjemy hc_vars_tetra)
+var_order <- hc_vars_tetra$labels[hc_vars_tetra$order]
+
+# przytnij i przekształć macierz korelacji do formatu long
+cor_long <- as.data.frame(as.table(cor_tetra))
+colnames(cor_long) <- c("Var1", "Var2", "Correlation")
+
+# ustaw kolejność faktorów wg porządku z dendrogramu
+cor_long$Var1 <- factor(cor_long$Var1, levels = var_order)
+cor_long$Var2 <- factor(cor_long$Var2, levels = var_order)
+
+# heatmapa w ggplot2
+ggplot(cor_long, aes(x = Var1, y = Var2, fill = Correlation)) +
+  geom_tile(color = "grey90") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0,
+                       limits = c(-1, 1), name = "r (tetrachoric)") +
+  geom_text(aes(label = sprintf("%.2f", Correlation)), size = 2) +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1, size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.title = element_blank(),
+        panel.grid = element_blank()) +
+  coord_fixed() +
+  labs(title = "Heatmapa korelacji tetrachoricznej (zmienne uporządkowane wg dendrogramu)")
+
+# ----- D. Alternatywna heatmapa JACCARD (współwystępowanie) ----- 
+# stwórz macierz współwystępowania: transponowana macierz * macierz = liczba wspólnych '1'
+coocc <- t(as.matrix(mat)) %*% as.matrix(mat)
+diag(coocc) <- 0
+# przekształć do long i uporządkuj wg tego samego porządku var_order
+coocc_long <- as.data.frame(as.table(coocc))
+colnames(coocc_long) <- c("Var1", "Var2", "cooccurrence")
+coocc_long$Var1 <- factor(coocc_long$Var1, levels = var_order)
+coocc_long$Var2 <- factor(coocc_long$Var2, levels = var_order)
+
+ggplot(coocc_long, aes(x = Var1, y = Var2, fill = cooccurrence)) +
+  geom_tile(color = "grey90") +
+  geom_text(aes(label = cooccurrence), size = 2) +
+  scale_fill_viridis_c(option = "magma") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1, size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.title = element_blank(),
+        panel.grid = element_blank()) +
+  coord_fixed() +
+  labs(title = "Macierz współwystępowania /n (liczba respondentów zaznaczających obie zmienne)")
+
+# ----- E. Zapis wyników: przypisz klastrowanie (tetrachoric) do ramki metadanych zmiennych -----
+var_clusters_df <- data.frame(
+  variable = names(vars_clusters_tetra),
+  cluster_tetra = as.integer(vars_clusters_tetra),
+  cluster_jaccard = as.integer(vars_clusters_jaccard)
+)
+print(var_clusters_df)
+
+# (opcjonalnie) zapisz
+# write.csv(var_clusters_df, "variable_clusters_map.csv", row.names = FALSE)
+
+```
+
+## Graf
+
+```{r}
+# Jeśli nie masz pakietów:
+# install.packages(c("igraph", "dplyr", "ggraph", "tidygraph", "RColorBrewer"))
+
+library(igraph)
+library(ggraph)
+library(tidygraph)
+library(RColorBrewer)
+
+# --------------------------
+# 1️⃣ Dane wejściowe
+# Zakładam, że masz raw_map_data_bin (z 0/1, w tym m_scale)
+# --------------------------
+
+# macierz współwystępowania (ile razy obie zmienne mają wartość 1)
+co_mat <- t(as.matrix(all_map_data_bin)) %*% as.matrix(all_map_data_bin)
+diag(co_mat) <- 0  # usuń diagonalę
+
+# --------------------------
+# 2️⃣ Utworzenie grafu
+# --------------------------
+g <- graph_from_adjacency_matrix(co_mat, weighted = TRUE, mode = "undirected", diag = FALSE)
+
+# --------------------------
+# 3️⃣ Filtracja słabych połączeń
+# --------------------------
+threshold <- 5  # np. tylko połączenia >= 5 współwystąpień
+g_filt <- delete_edges(g, E(g)[weight < threshold])
+g_filt <- delete_vertices(g_filt, degree(g_filt) == 0)
+
+# --------------------------
+# 4️⃣ Przekształcenie do tidygraph
+# --------------------------
+tg <- as_tbl_graph(g_filt)
+
+# 🔹 Obliczenie metryk centralności
+tg <- tg %>%
+  mutate(
+    degree = centrality_degree(),
+    betweenness = centrality_betweenness(),
+    strength = strength(graph = g_filt, vids = V(g_filt), weights = E(g_filt)$weight)
+  )
+
+# --------------------------
+# 5️⃣ Wizualizacja sieci w ggplot (ggraph)
+# --------------------------
+pal <- brewer.pal(9, "YlGnBu")
+
+set.seed(123)
+ggraph(tg, layout = "fr") +
+  geom_edge_link(aes(width = weight), alpha = 0.3, color = "grey50") +
+  geom_node_point(aes(size = strength, color = betweenness)) +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  scale_edge_width(range = c(0.2, 2)) +
+  scale_color_gradientn(colors = pal, name = "Betweenness") +
+  theme_void() +
+  theme(legend.position = "right") +
+  labs(
+    title = paste("Sieć współwystępowania elementów mapy (≥", threshold, " wspólnych)"),
+    subtitle = "Kolor = centralność pośrednicząca, Rozmiar = siła połączeń"
+  )
+
+
+```
+
+# zależność od zmiennych objaśniających
+
+```{r}
+
+# --- Jeden wykres na zmienną objaśniającą + testy statystyczne ---
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+
+# --- Przygotowanie danych (upewnij się, że masz wczytane all_data.rda) ---
+# load("all_data.rda")
+
+all_map_data <- all_data %>% 
+  select(starts_with("m_"), sex, age, education, place, visited_ome, distance_zone, m_scale) %>%
+  filter(!is.na(m_scale))
+
+all_map_data_bin <- all_map_data %>%
+  select(-m_landmark_chimney) %>% 
+  mutate(across(starts_with("m_"), ~ ifelse(. %in% c("tak", "duża"), 1L,
+                                            ifelse(. %in% c("nie", "mała"), 0L, NA)))) %>%
+  mutate(
+    distance_zone = ifelse(distance_zone == 1, "miejscowi",
+                           ifelse(distance_zone %in% c(2,3,4), "przyjezdni", NA_character_)),
+    distance_zone = factor(distance_zone, levels = c("miejscowi", "przyjezdni"))
+  ) %>%
+  drop_na()
+
+map_long <- all_map_data_bin %>%
+  pivot_longer(cols = starts_with("m_"), names_to = "map_var", values_to = "presence") %>%
+  mutate(map_var = factor(map_var, levels = unique(map_var)))
+
+explanatory_vars <- c("sex", "age", "education", "place", "visited_ome", "distance_zone")
+
+combined_plots <- list()
+tests_summary <- list()
+posthoc_summary <- list()
+
+for (var in explanatory_vars) {
+  message("Analizuję zmienną objaśniającą: ", var)
+  
+  # --- Oblicz średnie występowania (proporcje) ---
+  mean_df <- map_long %>%
+    group_by(map_var, group = .data[[var]]) %>%
+    summarise(mean_presence = mean(presence, na.rm = TRUE),
+              n = sum(!is.na(presence)),
+              .groups = "drop")
+  
+  # --- Wykres ---
+  p <- ggplot(mean_df, aes(x = map_var, y = mean_presence, fill = as.factor(group))) +
+    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    coord_flip() +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0,1)) +
+    labs(
+      title = paste("Udział obecności elementów na mapie wg", var),
+      x = NULL, y = "Udział obecności (%)", fill = var
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(face = "bold"), axis.text.y = element_text(size = 9))
+  
+  combined_plots[[var]] <- p
+  
+  # --- Testy ---
+  map_vars <- unique(map_long$map_var)
+  main_res_list <- list()
+  posthoc_list <- list()
+  
+  for (mv in map_vars) {
+    df_sub <- map_long %>%
+      filter(map_var == mv) %>%
+      mutate(group = as.factor(.data[[var]])) %>%
+      drop_na(group, presence)
+    
+    n_groups <- n_distinct(df_sub$group)
+    if (nrow(df_sub) == 0 || n_groups < 2) {
+      main_res_list[[mv]] <- tibble(map_var = mv, test = NA_character_, p_value = NA_real_, n_groups = n_groups)
+      next
+    }
+    
+    if (n_groups == 2) {
+      wt <- tryCatch(wilcox_test(df_sub, presence ~ group), error = function(e) NULL)
+      pval <- if (!is.null(wt)) wt$p else NA_real_
+      main_res_list[[mv]] <- tibble(map_var = mv, test = "Wilcoxon", p_value = pval, n_groups = n_groups)
+    } else {
+      kt <- tryCatch(kruskal_test(df_sub, presence ~ group), error = function(e) NULL)
+      pval <- if (!is.null(kt)) kt$p else NA_real_
+      main_res_list[[mv]] <- tibble(map_var = mv, test = "Kruskal-Wallis", p_value = pval, n_groups = n_groups)
+      
+      if (!is.null(kt) && kt$p < 0.05) {
+        counts <- df_sub %>% count(group)
+        if (all(counts$n >= 2)) {
+          dunn <- tryCatch(
+            dunn_test(df_sub, presence ~ group, p.adjust.method = "holm"),
+            error = function(e) tibble(map_var = mv, group1 = NA, group2 = NA, p.adj = NA, note = e$message)
+          )
+          # upewnij się, że jest kolumna p.adj
+          if (!"p.adj" %in% colnames(dunn)) {
+            if ("p.adjusted" %in% colnames(dunn)) dunn <- rename(dunn, p.adj = p.adjusted)
+            else dunn$p.adj <- NA_real_
+          }
+          dunn <- mutate(dunn, map_var = mv)
+          posthoc_list[[mv]] <- dunn
+        }
+      }
+    }
+  }
+  
+  main_res_df <- bind_rows(main_res_list) %>%
+    mutate(variable = var,
+           p_value_adj = ifelse(!is.na(p_value), p.adjust(p_value, method = "holm"), NA_real_),
+           significant = ifelse(!is.na(p_value_adj) & p_value_adj < 0.05, TRUE, FALSE)) %>%
+    select(variable, everything())
+  
+  tests_summary[[var]] <- main_res_df
+  posthoc_df <- if (length(posthoc_list) > 0) bind_rows(posthoc_list) else tibble()
+  posthoc_summary[[var]] <- posthoc_df
+  
+  # --- Wypisywanie wyników ---
+  cat("\n=== Wyniki główne dla:", var, "===\n")
+  print(main_res_df %>% filter(!is.na(p_value)) %>% arrange(p_value_adj) %>% head(10))
+  
+  if (nrow(posthoc_df) > 0 && "p.adj" %in% colnames(posthoc_df)) {
+    cat("\n--- Istotne porównania post-hoc (Dunn) dla", var, "---\n")
+    print(posthoc_df %>% filter(!is.na(p.adj), p.adj < 0.05))
+  } else {
+    cat("\nBrak istotnych wyników post-hoc lub brak kolumny p.adj dla:", var, "\n")
+  }
+}
+
+# --- Zbiorcze tabele wyników ---
+all_tests_main_df <- bind_rows(tests_summary)
+all_posthoc_df <- bind_rows(posthoc_summary, .id = "variable")
+
+# Przykładowe wyświetlenie wykresu:
+combined_plots$sex
+combined_plots$age
+combined_plots$education
+combined_plots$place
+combined_plots$visited_ome
+combined_plots$distance_zone
+
+
+
+# Próba określenia, które zmienne objaśniające mają największy wpływ
+all_tests_main_df <- all_tests_main_df %>% 
+  mutate(significant_pre_ajd = ifelse(p_value < 0.05, TRUE, FALSE))
+
+influence_summary <- all_tests_main_df %>%
+  group_by(variable) %>%
+  summarise(
+    n_significant = sum(significant, na.rm = TRUE),
+    n_total = n(),
+    share_significant = n_significant / n_total
+  ) %>%
+  arrange(desc(n_significant))
+```
+
+
+
+
+# zależność od zmiennej visited_ome
+
+```{r}
+# --- Compute differences visited_ome (Tak - Nie)
+diff_df <- map_long %>%
+  select(map_var, visited_ome, presence) %>%
+  group_by(map_var, visited_ome) %>%
+  summarise(mean_presence = mean(presence, na.rm = TRUE), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = visited_ome,
+    values_from = mean_presence
+  ) %>%
+  mutate(Tak_Nie = Tak - Nie) %>% 
+  arrange(desc(Tak_Nie)) %>%
+  mutate(
+    Tak  = scales::percent(Tak,  accuracy = 0.1, decimal.mark = ","),
+    Nie  = scales::percent(Nie,  accuracy = 0.1, decimal.mark = ","),
+    Tak_Nie = scales::percent(Tak_Nie,
+                                         accuracy = 0.1,
+                                         decimal.mark = ",")
+  ) %>%
+  print()
+  
+
+
+# --- Compute overall mean per map_var ---
+overall_means <- map_long %>%
+  group_by(map_var) %>%
+  summarise(overall_mean = mean(presence, na.rm = TRUE), .groups = "drop")
+
+# --- Renames labels for chart ---
+map_labels <- c(
+  m_scale                = "Scale",
+  m_border               = "Border",
+  m_path_asphalt         = "Asphalt path",
+  m_path_nature          = "Nature path",
+  m_path_other           = "Other path",
+  m_edges_border         = "Edges: border",
+  m_edges_river          = "Edges: river",
+  m_circles_lake         = "Circle: Lake",
+  m_circles_meadow       = "Circle: Meadow",
+  m_nodes_parking        = "Parking",
+  m_nodes_town           = "Town",
+  m_nodes_headquarters   = "Headquarters",
+  m_nodes_ome            = "OME",
+  m_landmark_tower       = "Tower",
+  m_landmark_shelter     = "Shelter",
+  m_landmark_birdhide    = "Bird hide",
+  m_landmark_bench       = "Bench",
+  m_landmark_bridge      = "Bridge",
+  m_landmark_ferry       = "Ferry",
+  m_landmark_pump_station = "Pump station",
+  m_landmark_info_board  = "Info board",
+  m_landmark_footbridge  = "Footbridge",
+  m_event_observation    = "Observation event",
+  m_event_people         = "People event"
+)
+
+# --- Wykres ---
+map_long %>%
+    select(visited_ome, map_var, presence) %>% 
+    left_join(overall_means, by = "map_var") %>%
+    mutate(map_var = reorder(map_var, overall_mean)) %>%
+    group_by(map_var, visited_ome) %>%
+    summarise(mean_presence = mean(presence, na.rm = TRUE),
+              n = sum(!is.na(presence)),
+              .groups = "drop") %>% 
+    mutate(map_var = recode(map_var, !!!map_labels)) %>%
+    ggplot(aes(x = map_var, y = mean_presence, fill = visited_ome)) +
+      geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+      geom_text(
+        aes(label = scales::percent(mean_presence, accuracy = 0.1)),
+        position = position_dodge(width = 0.8),
+        hjust = -0.1, size = 3, color = "black"
+      ) +
+      coord_flip() +
+      scale_y_continuous(
+        labels = scales::percent_format(accuracy = 1), 
+        breaks = seq(0, 1, by = 0.1),
+        limits = c(0,1)
+      ) +
+      labs(
+        title = "Udział obecności elementów na mapie wg odwiedzin w OME",
+        x = NULL, y = "Udział obecności (%)", fill = "Odwiedził OME"
+      ) +
+      theme_minimal(base_size = 12) +
+      theme(plot.title = element_text(face = "bold"), 
+            axis.text.y = element_text(size = 9),
+            )
+
+
+
+
+# --- Testy ---
+map_vars <- unique(map_long$map_var)
+results <- list()
+
+for (mv in map_vars) {
+  
+  df_sub <- map_long %>%
+    filter(map_var == mv) %>%
+    mutate(group = as.factor(visited_ome)) %>%
+    drop_na(group, presence)
+  
+  # Jeśli dane nie pozwalają na test — pomiń
+  if (nrow(df_sub) == 0 || n_distinct(df_sub$group) < 2) {
+    results[[mv]] <- tibble(
+      map_var = mv,
+      test = "Wilcoxon",
+      p_value = NA_real_,
+      n_groups = n_distinct(df_sub$group)
+    )
+    next
+  }
+  
+  wt <- tryCatch(
+    wilcox_test(df_sub, presence ~ group),
+    error = function(e) NULL
+  )
+  
+  pval <- if (!is.null(wt)) wt$p else NA_real_
+  
+  results[[mv]] <- tibble(
+    map_var = mv,
+    test = "Wilcoxon",
+    p_value = pval,
+    n_groups = 2
+  )
+}
+
+main_res_df <- bind_rows(results) %>%
+  mutate(
+    variable = "visited_ome",
+    p_value_adj = p.adjust(p_value, method = "holm"),
+    significant = p_value_adj < 0.05
+  ) %>%
+  select(variable, everything())
+
+# --- Wyniki ---
+cat("\n=== Wyniki główne dla visited_ome ===\n")
+print(main_res_df %>% arrange(p_value_adj))
+
+cat("\n--- Post-hoc ---\n")
+cat("Nie dotyczy — tylko 2 grupy, brak post-hoc.\n")
+
+```
+
+## Wizualizacja w tabeli
+
+```{r}
+diff_df %>%
+  gt() %>%
+  # Dodaj tytuł tabeli
+  tab_header(
+    title = "Udział obecności elementów na mapie wśród osób, które odwiedziły i nie odwiedziły OME"
+  ) %>%
+  # Dodaj podtytuł z opisem kolumn
+  tab_spanner(
+    label = "Odsetek odpowiedzi",
+    columns = c(Tak, Nie)
+  ) %>%
+  # Zmień nazwy kolumn
+  cols_label(
+    map_var = "Element na mapie",
+    Tak = "Odwiedzili OME",
+    Nie = "Nie odwiedzili OME",
+    Tak_Nie = "Różnica (Tak - Nie)"
+  ) %>%
+  # Sformatuj komórki - wyrównanie
+  cols_align(
+    align = "left",
+    columns = map_var
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = c(Tak, Nie, Tak_Nie)
+  ) %>%
+  # Opcjonalnie: pogrub wartości różnicy dla lepszej czytelności
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(columns = Tak_Nie)
+  ) %>%
+  # Opcjonalnie: dodaj obramowanie
+  tab_style(
+    style = cell_borders(sides = "bottom", color = "#D3D3D3", weight = px(1)),
+    locations = cells_body(rows = everything())
+  ) %>%
+  # Dodaj footnotes z wyjaśnieniami
+  tab_footnote(
+    footnote = "OME - Obiekt/Miejsce Edukacyjne",
+    locations = cells_title(groups = "title")
+  ) %>%
+  tab_footnote(
+    footnote = "Różnica obliczona jako: Tak - Nie",
+    locations = cells_column_labels(columns = Tak_Nie)
+  ) %>%
+  # Opcjonalnie: dodaj kolory do kolumny różnicy
+  # (zielony dla dodatnich, czerwony dla ujemnych, szary dla zer)
+  data_color(
+    columns = Tak_Nie,
+    fn = function(x) {
+      # Usuń znaki % i zamień przecinki na kropki, konwertuj na liczby
+      values <- as.numeric(gsub(",", ".", gsub("%", "", x)))
+      
+      # Utwórz paletę kolorów
+      colors <- case_when(
+        values > 0 ~ "#d9f2e6",  # jasny zielony
+        values < 0 ~ "#ffe6e6",  # jasny czerwony
+        TRUE ~ "#f2f2f2"         # jasny szary
+      )
+      colors
+    }
+  ) %>%
+  # Ustaw szerokość kolumn
+  cols_width(
+    map_var ~ px(250),
+    Tak ~ px(120),
+    Nie ~ px(120),
+    Tak_Nie ~ px(140)
+  ) %>%
+  # Dodaj stylowanie wiersz co drugi dla lepszej czytelności
+  opt_row_striping()
+```
+
+
+# zależność od zmiennej place
+
+```{r}
+# --- Wykres ---
+map_long %>%
+    select(place, map_var, presence) %>% 
+    left_join(overall_means, by = "map_var") %>%
+    mutate(map_var = reorder(map_var, overall_mean)) %>%
+    group_by(map_var, place) %>%
+    summarise(mean_presence = mean(presence, na.rm = TRUE),
+              n = sum(!is.na(presence)),
+              .groups = "drop") %>% 
+    mutate(map_var = recode(map_var, !!!map_labels)) %>%
+    ggplot(aes(x = map_var, y = mean_presence, fill = place)) +
+      geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+      geom_text(
+        aes(label = scales::percent(mean_presence, accuracy = 0.1)),
+        position = position_dodge(width = 0.8),
+        hjust = -0.1, size = 3, color = "black"
+      ) +
+      coord_flip() +
+      scale_y_continuous(
+        labels = scales::percent_format(accuracy = 1), 
+        breaks = seq(0, 1, by = 0.1),
+        limits = c(0,1)
+      ) +
+      labs(
+        title = "Udział obecności elementów na mapie wg miejsca ankietowania",
+        x = NULL, y = "Udział obecności (%)", fill = "miejsce ankietowania"
+      ) +
+      theme_minimal(base_size = 12) +
+      theme(plot.title = element_text(face = "bold"), 
+            axis.text.y = element_text(size = 9),
+            )
+
+```
+
+## tabela zbiorcza w DT:datatable()
+
+```{r}
+# funkcja do obliczania (aby nie powielać kodu niżej)
+compute_diff <- function(data, group_var, level_pos, level_neg, diff_name) {
+  
+  data %>%
+    select(map_var, {{ group_var }}, presence) %>%
+    group_by(map_var, {{ group_var }}) %>%
+    summarise(mean_presence = mean(presence, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(
+      names_from  = {{ group_var }},
+      values_from = mean_presence
+    ) %>%
+    mutate(
+      !!diff_name := .data[[level_pos]] - .data[[level_neg]]
+    ) %>%
+    rename(
+      !!level_pos := all_of(level_pos),
+      !!level_neg := all_of(level_neg)
+    )
+}
+
+# Różnice: visited_ome (Tak – Nie)
+diff_visited <- compute_diff(
+  data      = map_long,
+  group_var = visited_ome,
+  level_pos = "Tak",
+  level_neg = "Nie",
+  diff_name = "Tak_Nie"
+)
+
+
+# Różnice: place (Betonka – Olszynki)
+
+diff_place <- compute_diff(
+  data      = map_long,
+  group_var = place,
+  level_pos = "Betonka",
+  level_neg = "Olszynki",
+  diff_name = "Betonka_Olszynki"
+)
+
+# połączenie w jedną tabelę po diff_place
+diff_df <- diff_visited %>%
+  left_join(diff_place, by = "map_var") %>%
+  arrange(desc(Tak_Nie)) %>% 
+  mutate(OME_yes__Betonka = Tak - Betonka)
+
+DT::datatable(
+  diff_df,
+  options = list(
+    pageLength = 25,      # pokazuje 25 wierszy na stronę
+    scrollX = TRUE,       # poziome przewijanie
+    searchHighlight = TRUE # podświetla wyniki wyszukiwania
+  ),
+  rownames = FALSE        # bez nazw wierszy
+  ) %>%
+  DT::formatPercentage(
+    columns = names(diff_df)[sapply(diff_df, is.numeric)],
+    digits = 1
+  )
+
+```
+
+## tabela zbiorcza w gt()
+
+```{r}
+# Stwórz tabelę gt
+gt_table <- diff_df %>%
+  # Konwertuj wszystkie wartości liczbowe na procenty z 1 miejscem po przecinku
+  mutate(across(where(is.numeric), ~ scales::percent(.x, accuracy = 0.1, decimal.mark = ","))) %>%
+  gt() %>%
+  # Tytuł tabeli
+  tab_header(
+    title = "Różnice w udziale obecności elementów na mapie",
+    subtitle = "Porównanie między grupami według odwiedzin OME oraz miejsca ankietowania"
+  ) %>%
+  # Nagłówki grup kolumn
+  tab_spanner(
+    label = "Odwiedził OME",
+    columns = c(Tak, Nie, Tak_Nie)
+  ) %>%
+  tab_spanner(
+    label = "Miejsce ankietowania",
+    columns = c(Betonka, Olszynki, Betonka_Olszynki)
+  ) %>%
+  tab_spanner(
+    label = "Dodatkowe porównanie",
+    columns = OME_yes__Betonka
+  ) %>%
+  # Etykiety kolumn
+  cols_label(
+    map_var = "Element na mapie",
+    Tak = "Tak",
+    Nie = "Nie",
+    Tak_Nie = "Różnica (T-N)",
+    Betonka = "Betonka",
+    Olszynki = "Olszynki",
+    Betonka_Olszynki = "Różnica (B-O)",
+    OME_yes__Betonka = "Tak (OME) - Betonka"
+  ) %>%
+  # Wyrównanie
+  cols_align(
+    align = "left",
+    columns = map_var
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = where(is.character)
+  ) %>%
+  # Stylowanie komórek dla różnic
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(columns = c(Tak_Nie, Betonka_Olszynki, OME_yes__Betonka))
+  ) %>%
+  # Kolorowanie różnic
+  data_color(
+    columns = c(Tak_Nie, Betonka_Olszynki, OME_yes__Betonka),
+    fn = function(x) {
+      # Usuń znak % i zamień przecinek na kropkę
+      values <- as.numeric(gsub("%", "", gsub(",", ".", x)))
+      
+      # Dla wartości liczbowych (różnic)
+      case_when(
+        values > 0 ~ "#e6f3ff",      # jasny niebieski dla dodatnich
+        values < 0 ~ "#ffe6e6",      # jasny czerwony dla ujemnych
+        TRUE ~ "#f0f0f0"             # szary dla zer
+      )
+    }
+  ) %>%
+  # Obramowanie między sekcjami
+  tab_style(
+    style = cell_borders(sides = "right", color = "#D3D3D3", weight = px(2)),
+    locations = list(
+      cells_body(columns = Tak_Nie),
+      cells_body(columns = Betonka_Olszynki)
+    )
+  ) %>%
+  # Stopka z wyjaśnieniami
+  tab_footnote(
+    footnote = "T-N: różnica między osobami które odwiedziły OME (Tak) i nie (Nie)",
+    locations = cells_column_labels(columns = Tak_Nie)
+  ) %>%
+  tab_footnote(
+    footnote = "B-O: różnica między osobami ankietowanymi na Betonce i w Olszynkach",
+    locations = cells_column_labels(columns = Betonka_Olszynki)
+  ) %>%
+  tab_footnote(
+    footnote = "Różnica między osobami które odwiedziły OME a osobami ankietowanymi na Betonce",
+    locations = cells_column_labels(columns = OME_yes__Betonka)
+  ) %>%
+  # Opcje stylistyczne
+  tab_options(
+    table.font.size = 12,
+    column_labels.font.weight = "bold",
+    table_body.hlines.color = "white",
+    table_body.vlines.color = "white",
+    heading.title.font.size = 16,
+    heading.subtitle.font.size = 14
+  ) %>%
+  # Naprzemienne kolorowanie wierszy dla lepszej czytelności
+  opt_row_striping()
+
+# Wyświetl tabelę
+gt_table
+```
+
+
+

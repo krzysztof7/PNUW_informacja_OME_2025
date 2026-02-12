@@ -1,0 +1,213 @@
+---
+title: "06_OME_plan_change"
+author: "KP"
+date: "2026-02-04"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE,   # ukrywa warningi
+  message = FALSE,   # ukrywa messages
+  echo = FALSE       # ukrywa kod
+)
+```
+
+```{r}
+library(tidyverse)
+library(rstatix)
+library(effectsize)
+library(scales)
+
+```
+
+
+# Eksploracyjne porównanie: OME – zmiana planów vs brak zmiany
+
+```{r}
+load("all_data.rda")
+```
+
+# 1. Przygotowanie próby 
+
+(jeśli ma być na wykresach i w tabelach zmienił plany, a nie tylko zmienił, to w tej sekcji trzeba to zmienić)
+
+```{r}
+ome_data <- all_data %>%
+  filter(visited_ome == "Tak") %>%
+  mutate(
+    ome_plan_change_bin = case_when(
+      ome_plan_changed %in% c("częściowo zmieniłem", "całkowicie zmieniłem") ~ "zmienił",
+      ome_plan_changed == "nie zmieniłem planów" ~ "nie zmienił",
+      TRUE ~ NA_character_
+    ),
+    ome_plan_change_bin = factor(ome_plan_change_bin,
+                             levels = c("nie zmienił", "zmienił"))
+  ) %>%
+  filter(!is.na(ome_plan_change_bin))
+
+table(ome_data$ome_plan_change_bin)
+```
+## Uwaga metodologiczna (do raportu)
+
+Analiza ma charakter eksploracyjny. N grupy 'zmienił plany' jest niewielkie (ok. 20), dlatego wyniki należy interpretować kierunkowo, z naciskiem na wielkość efektu, nie istotność.
+
+
+
+# 2. Charakterystyka (profil) odwiedzającego OME
+```{r}
+## Zmienne do profilu
+profile_vars <- c("place","sex","age","education","distance_zone",
+                  "distance_zone2", "visits_count", "main_reason","trail_decision_time")
+
+## Wybranie danych do profilu oraz ujednolicenie typów
+ome_profile <- ome_data %>%
+  select(ome_plan_change_bin, all_of(profile_vars)) %>%
+  mutate(
+    across(
+      -ome_plan_change_bin,
+      ~ factor(.x, ordered = FALSE)
+    )
+  )
+
+
+## Tabela z opisem
+profile_table <- ome_profile %>%
+  pivot_longer(
+    cols = -ome_plan_change_bin,
+    names_to = "variable",
+    values_to = "category"
+  ) %>%
+  filter(!is.na(category)) %>%
+  count(variable, ome_plan_change_bin, category) %>%
+  group_by(variable, ome_plan_change_bin) %>%
+  mutate(percent = 100 * n / sum(n)) %>%
+  ungroup()
+```
+
+
+### Wykresy
+```{r}
+## Funkcja pomocnicza
+plot_profile <- function(data, var_name, title) {
+  data %>%
+    filter(variable == var_name) %>%
+    ggplot(aes(
+      x = category,
+      y = percent,
+      fill = ome_plan_change_bin
+    )) +
+    geom_col(position = "dodge") +
+    geom_text(
+      aes(label = paste0(round(percent, 1), "%\n(n=", n, ")")),
+      position = position_dodge(width = 0.9),
+      vjust = -0.3,
+      size = 3,
+      lineheight = 0.8
+    ) +
+    scale_y_continuous(labels = percent_format(scale = 1)) +
+    labs(
+      title = title,
+      x = NULL,
+      y = "% w obrębie grupy",
+      fill = NULL
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      legend.position = "top"
+    )
+}
+
+
+
+plot_profile(profile_table, "place", 
+             "Miejsce ankietowania a zmiana planów")
+
+plot_profile(profile_table, "sex",
+             "Płeć respondentów a zmiana planów")
+
+plot_profile(profile_table, "age",
+             "Struktura wieku respondentów")
+
+plot_profile(profile_table, "education",
+             "Wykształcenie respondentów")
+
+plot_profile(profile_table, "distance_zone",
+             "Strefy odległości miejsca zamieszkania")
+
+plot_profile(profile_table, "distance_zone2",
+             "Miejscowi vs przyjezdni")
+
+plot_profile(profile_table, "visits_count",
+             "Która wizyta w PNUW")
+
+plot_profile(profile_table, "main_reason",
+             "Główny powód wizyty w PNUW")
+
+plot_profile(profile_table, "trail_decision_time",
+             "Moment podjęcia decyzji o wyborze szlaku")
+```
+
+### Tabele
+
+```{r}
+## Tworzenie zestawu tabel tekstowych
+create_profile_tables <- function(data, profile_vars) {
+  tables_list <- list()
+  
+  for (var in profile_vars) {
+    # Filtrujemy i przygotowujemy dane dla konkretnej zmiennej
+    var_table <- data %>%
+      filter(!is.na(!!sym(var))) %>%
+      group_by(ome_plan_change_bin, !!sym(var)) %>%
+      summarise(n = n(), .groups = "drop") %>%
+      group_by(ome_plan_change_bin) %>%
+      mutate(
+        percent = round(100 * n / sum(n), 1),
+        category = as.character(!!sym(var))
+      ) %>%
+      ungroup() %>%
+      select(ome_plan_change_bin, category, n, percent)
+    
+    # Przekształcamy do szerokiego formatu
+    wide_table <- var_table %>%
+      pivot_wider(
+        id_cols = category,
+        names_from = ome_plan_change_bin,
+        values_from = c(n, percent),
+        names_glue = "{.value}_{gsub(' planów| plany', '', ome_plan_change_bin)}"
+      ) %>%
+      arrange(category)
+    
+
+    
+    tables_list[[var]] <- wide_table
+  }
+  
+  return(tables_list)
+}
+
+## Tworzenie tabel
+profile_tables <- create_profile_tables(ome_data, profile_vars)
+
+## Wyświetlenie wszystkich tabel
+for (var in profile_vars) {
+  cat("\n\n========================================\n")
+  cat("Tabela dla zmiennej:", var, "\n")
+  cat("========================================\n\n")
+  print(profile_tables[[var]])
+  cat("\n")
+}
+```
+
+
+
+
+
+
