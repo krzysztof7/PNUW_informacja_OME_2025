@@ -285,6 +285,15 @@ ggraph(tg, layout = "fr") +
 
 # zależność od zmiennych objaśniających
 
+## Podejście z testem  U Manna–Whitneya (Wilcoxona dla prób niezależnych)
+
+W celu oceny związku cech objaśniających z występowaniem poszczególnych elementów na mapach poznawczych analizowano różnice w zakresie zmiennej binarnej (0 – brak elementu, 1 – element zaznaczony) między niezależnymi grupami respondentów.
+
+W przypadku porównań dwóch grup (np. płeć, odwiedzenie OME, miejsce zamieszkania) zastosowano test U Manna–Whitneya (Wilcoxona dla prób niezależnych). W przypadku zmiennych obejmujących trzy i więcej grup (np. wiek w przedziałach, poziom wykształcenia, strefy odległości) zastosowano test Kruskala–Wallisa.
+Wartości p pochodzą z odpowiednich testów nieparametrycznych. Ze względu na eksploracyjny charakter analizy odstąpiono od korekty na wielokrotne porównania, mając świadomość zwiększonego ryzyka błędu I rodzaju.
+
+Uwaga! W pierwszym podejściu do analizy ze względu na wielokrotne testowanie (analiza wielu elementów mapy) zastosowano korektę wartości p metodą Holma w celu kontroli skumulowanego błędu I rodzaju. Za istotne statystycznie uznawano wyniki, dla których p po korekcie było mniejsze niż 0,05.Z tego podejścia wycofano się z uwagi na bardzo nieliczne przypadki p-value ajd < 0,05.
+
 ```{r}
 
 # --- Jeden wykres na zmienną objaśniającą + testy statystyczne ---
@@ -317,8 +326,8 @@ map_long <- all_map_data_bin %>%
 explanatory_vars <- c("sex", "age", "education", "place", "visited_ome", "distance_zone")
 
 combined_plots <- list()
-tests_summary <- list()
-posthoc_summary <- list()
+# tests_summary <- list()
+# posthoc_summary <- list()
 
 for (var in explanatory_vars) {
   message("Analizuję zmienną objaśniającą: ", var)
@@ -344,76 +353,76 @@ for (var in explanatory_vars) {
   
   combined_plots[[var]] <- p
   
-  # --- Testy ---
-  map_vars <- unique(map_long$map_var)
-  main_res_list <- list()
-  posthoc_list <- list()
-  
-  for (mv in map_vars) {
-    df_sub <- map_long %>%
-      filter(map_var == mv) %>%
-      mutate(group = as.factor(.data[[var]])) %>%
-      drop_na(group, presence)
-    
-    n_groups <- n_distinct(df_sub$group)
-    if (nrow(df_sub) == 0 || n_groups < 2) {
-      main_res_list[[mv]] <- tibble(map_var = mv, test = NA_character_, p_value = NA_real_, n_groups = n_groups)
-      next
-    }
-    
-    if (n_groups == 2) {
-      wt <- tryCatch(wilcox_test(df_sub, presence ~ group), error = function(e) NULL)
-      pval <- if (!is.null(wt)) wt$p else NA_real_
-      main_res_list[[mv]] <- tibble(map_var = mv, test = "Wilcoxon", p_value = pval, n_groups = n_groups)
-    } else {
-      kt <- tryCatch(kruskal_test(df_sub, presence ~ group), error = function(e) NULL)
-      pval <- if (!is.null(kt)) kt$p else NA_real_
-      main_res_list[[mv]] <- tibble(map_var = mv, test = "Kruskal-Wallis", p_value = pval, n_groups = n_groups)
-      
-      if (!is.null(kt) && kt$p < 0.05) {
-        counts <- df_sub %>% count(group)
-        if (all(counts$n >= 2)) {
-          dunn <- tryCatch(
-            dunn_test(df_sub, presence ~ group, p.adjust.method = "holm"),
-            error = function(e) tibble(map_var = mv, group1 = NA, group2 = NA, p.adj = NA, note = e$message)
-          )
-          # upewnij się, że jest kolumna p.adj
-          if (!"p.adj" %in% colnames(dunn)) {
-            if ("p.adjusted" %in% colnames(dunn)) dunn <- rename(dunn, p.adj = p.adjusted)
-            else dunn$p.adj <- NA_real_
-          }
-          dunn <- mutate(dunn, map_var = mv)
-          posthoc_list[[mv]] <- dunn
-        }
-      }
-    }
-  }
-  
-  main_res_df <- bind_rows(main_res_list) %>%
-    mutate(variable = var,
-           p_value_adj = ifelse(!is.na(p_value), p.adjust(p_value, method = "holm"), NA_real_),
-           significant = ifelse(!is.na(p_value_adj) & p_value_adj < 0.05, TRUE, FALSE)) %>%
-    select(variable, everything())
-  
-  tests_summary[[var]] <- main_res_df
-  posthoc_df <- if (length(posthoc_list) > 0) bind_rows(posthoc_list) else tibble()
-  posthoc_summary[[var]] <- posthoc_df
-  
-  # --- Wypisywanie wyników ---
-  cat("\n=== Wyniki główne dla:", var, "===\n")
-  print(main_res_df %>% filter(!is.na(p_value)) %>% arrange(p_value_adj) %>% head(10))
-  
-  if (nrow(posthoc_df) > 0 && "p.adj" %in% colnames(posthoc_df)) {
-    cat("\n--- Istotne porównania post-hoc (Dunn) dla", var, "---\n")
-    print(posthoc_df %>% filter(!is.na(p.adj), p.adj < 0.05))
-  } else {
-    cat("\nBrak istotnych wyników post-hoc lub brak kolumny p.adj dla:", var, "\n")
-  }
+  # # --- Testy ---
+  # map_vars <- unique(map_long$map_var)
+  # main_res_list <- list()
+  # posthoc_list <- list()
+  # 
+  # for (mv in map_vars) {
+  #   df_sub <- map_long %>%
+  #     filter(map_var == mv) %>%
+  #     mutate(group = as.factor(.data[[var]])) %>%
+  #     drop_na(group, presence)
+  #   
+  #   n_groups <- n_distinct(df_sub$group)
+  #   if (nrow(df_sub) == 0 || n_groups < 2) {
+  #     main_res_list[[mv]] <- tibble(map_var = mv, test = NA_character_, p_value = NA_real_, n_groups = n_groups)
+  #     next
+  #   }
+  #   
+  #   if (n_groups == 2) {
+  #     wt <- tryCatch(wilcox_test(df_sub, presence ~ group), error = function(e) NULL)
+  #     pval <- if (!is.null(wt)) wt$p else NA_real_
+  #     main_res_list[[mv]] <- tibble(map_var = mv, test = "Wilcoxon", p_value = pval, n_groups = n_groups)
+  #   } else {
+  #     kt <- tryCatch(kruskal_test(df_sub, presence ~ group), error = function(e) NULL)
+  #     pval <- if (!is.null(kt)) kt$p else NA_real_
+  #     main_res_list[[mv]] <- tibble(map_var = mv, test = "Kruskal-Wallis", p_value = pval, n_groups = n_groups)
+  #     
+  #     if (!is.null(kt) && kt$p < 0.05) {
+  #       counts <- df_sub %>% count(group)
+  #       if (all(counts$n >= 2)) {
+  #         dunn <- tryCatch(
+  #           dunn_test(df_sub, presence ~ group, p.adjust.method = "holm"),
+  #           error = function(e) tibble(map_var = mv, group1 = NA, group2 = NA, p.adj = NA, note = e$message)
+  #         )
+  #         # upewnij się, że jest kolumna p.adj
+  #         if (!"p.adj" %in% colnames(dunn)) {
+  #           if ("p.adjusted" %in% colnames(dunn)) dunn <- rename(dunn, p.adj = p.adjusted)
+  #           else dunn$p.adj <- NA_real_
+  #         }
+  #         dunn <- mutate(dunn, map_var = mv)
+  #         posthoc_list[[mv]] <- dunn
+  #       }
+  #     }
+  #   }
+  # }
+  # 
+  # main_res_df <- bind_rows(main_res_list) %>%
+  #   mutate(variable = var,
+  #          p_value_adj = ifelse(!is.na(p_value), p.adjust(p_value, method = "holm"), NA_real_),
+  #          significant = ifelse(!is.na(p_value_adj) & p_value_adj < 0.05, TRUE, FALSE)) %>%
+  #   select(variable, everything())
+  # 
+  # tests_summary[[var]] <- main_res_df
+  # posthoc_df <- if (length(posthoc_list) > 0) bind_rows(posthoc_list) else tibble()
+  # posthoc_summary[[var]] <- posthoc_df
+  # 
+  # # --- Wypisywanie wyników ---
+  # cat("\n=== Wyniki główne dla:", var, "===\n")
+  # print(main_res_df %>% filter(!is.na(p_value)) %>% arrange(p_value_adj) %>% head(10))
+  # 
+  # if (nrow(posthoc_df) > 0 && "p.adj" %in% colnames(posthoc_df)) {
+  #   cat("\n--- Istotne porównania post-hoc (Dunn) dla", var, "---\n")
+  #   print(posthoc_df %>% filter(!is.na(p.adj), p.adj < 0.05))
+  # } else {
+  #   cat("\nBrak istotnych wyników post-hoc lub brak kolumny p.adj dla:", var, "\n")
+  # }
 }
 
-# --- Zbiorcze tabele wyników ---
-all_tests_main_df <- bind_rows(tests_summary)
-all_posthoc_df <- bind_rows(posthoc_summary, .id = "variable")
+# # --- Zbiorcze tabele wyników ---
+# all_tests_main_df <- bind_rows(tests_summary)
+# all_posthoc_df <- bind_rows(posthoc_summary, .id = "variable")
 
 # Przykładowe wyświetlenie wykresu:
 combined_plots$sex
@@ -425,24 +434,144 @@ combined_plots$distance_zone
 
 
 
-# Próba określenia, które zmienne objaśniające mają największy wpływ
-all_tests_main_df <- all_tests_main_df %>% 
-  mutate(significant_pre_ajd = ifelse(p_value < 0.05, TRUE, FALSE))
+# # Próba określenia, które zmienne objaśniające mają największy wpływ
+# all_tests_main_df <- all_tests_main_df %>% 
+#   mutate(significant_pre_ajd = ifelse(p_value < 0.05, TRUE, FALSE))
+# 
+# influence_summary <- all_tests_main_df %>%
+#   group_by(variable) %>%
+#   summarise(
+#     n_significant = sum(significant, na.rm = TRUE),
+#     n_total = n(),
+#     share_significant = n_significant / n_total
+#   ) %>%
+#   arrange(desc(n_significant))
+```
 
-influence_summary <- all_tests_main_df %>%
-  group_by(variable) %>%
-  summarise(
-    n_significant = sum(significant, na.rm = TRUE),
-    n_total = n(),
-    share_significant = n_significant / n_total
-  ) %>%
-  arrange(desc(n_significant))
+ 
+## Alternatywne podejsce: test chi^2 niezależności (Ponieważ analizowana jest zmienna binarna)
+
+W celu oceny związku cech objaśniających z występowaniem poszczególnych elementów na mapach poznawczych analizowano zależności między zmiennymi kategorialnymi. Zmienna zależna miała charakter binarny (0 – brak elementu na mapie, 1 – element zaznaczony), natomiast zmienne objaśniające miały charakter nominalny lub porządkowy.
+
+Dla każdej pary zmiennych (element mapy × cecha objaśniająca) konstruowano tabele kontyngencji i stosowano test chi-kwadrat niezależności (χ² Pearsona). W przypadkach, gdy oczekiwane liczebności w komórkach tabeli były mniejsze niż 5, stosowano dokładny test Fishera. Analizy prowadzono dla porównań dwugrupowych (np. płeć, odwiedzenie OME, miejsce zamieszkania), jak i dla zmiennych obejmujących trzy i więcej kategorii (np. wiek w przedziałach, poziom wykształcenia, strefy odległości).
+
+Wartości p pochodzą z testu χ² lub – w uzasadnionych przypadkach – z testu Fishera. Ze względu na eksploracyjny charakter analizy odstąpiono od korekty na wielokrotne porównania, mając świadomość zwiększonego ryzyka błędu I rodzaju.
+
+Uwaga: W pierwszym podejściu do analizy, ze względu na dużą liczbę równoległych testów (analiza wielu elementów mapy), zastosowano korektę wartości p metodą Holma w celu kontroli skumulowanego błędu I rodzaju. Za istotne statystycznie uznawano wówczas wyniki, dla których p po korekcie było mniejsze niż 0,05. Z podejścia tego zrezygnowano ze względu na bardzo nieliczne przypadki istotności po korekcie, co znacząco ograniczało możliwość interpretacji wyników w analizie eksploracyjnej.
+
+
+```{r}
+# ==========================================================
+# TESTY CHI-KWADRAT NIEZALEŻNOŚCI
+# ==========================================================
+
+# te testy nie dla distance_zone, ale dla distance_zone2
+all_map_data2 <- all_data %>% 
+  select(starts_with("m_"), sex, age, education, place, visited_ome, distance_zone2, m_scale) %>%
+  filter(!is.na(m_scale))
+
+explanatory_vars2 <- c("sex", "age", "education", "place", "visited_ome", "distance_zone2")
+
+
+chi_tests_summary <- list()
+
+for (var in explanatory_vars2) {
+  
+  message("Testy chi-kwadrat dla zmiennej: ", var)
+  
+  chi_res_list <- list()
+  map_vars <- names(all_map_data2)[grepl("^m_", names(all_map_data2))]
+  
+  for (mv in map_vars) {
+    
+    df_sub <- all_map_data2 %>%
+      select(all_of(mv), all_of(var)) %>%
+      drop_na()
+    
+    if (nrow(df_sub) == 0) {
+      chi_res_list[[mv]] <- tibble(
+        map_var = mv,
+        test = NA_character_,
+        p_value = NA_real_,
+        statistic = NA_real_
+      )
+      next
+    }
+    
+    tab <- table(df_sub[[mv]], df_sub[[var]])
+    
+    # Jeśli mniej niż 2 kategorie w którejkolwiek zmiennej – pomiń
+    if (min(dim(tab)) < 2) {
+      chi_res_list[[mv]] <- tibble(
+        map_var = mv,
+        test = NA_character_,
+        p_value = NA_real_,
+        statistic = NA_real_
+      )
+      next
+    }
+    
+    chi_obj <- suppressWarnings(chisq.test(tab))
+    
+    # Sprawdzenie oczekiwanych liczebności
+    if (any(chi_obj$expected < 5)) {
+      fisher_obj <- fisher.test(tab)
+      
+      chi_res_list[[mv]] <- tibble(
+        map_var = mv,
+        test = "Fisher",
+        p_value = fisher_obj$p.value,
+        statistic = NA_real_
+      )
+      
+    } else {
+      
+      chi_res_list[[mv]] <- tibble(
+        map_var = mv,
+        test = "Chi-square",
+        p_value = chi_obj$p.value,
+        statistic = as.numeric(chi_obj$statistic)
+      )
+    }
+  }
+  
+  chi_res_df <- bind_rows(chi_res_list) %>%
+    mutate(
+      variable = var,
+      p_value_adj = p.adjust(p_value, method = "holm"),
+      significant = p_value_adj < 0.05
+    ) %>%
+    select(variable, everything())
+  
+  chi_tests_summary[[var]] <- chi_res_df
+  
+  cat("\n=== Testy chi-kwadrat dla:", var, "===\n")
+  chi_res_df %>%
+          filter(!is.na(p_value)) %>%
+          arrange(p_value) %>%
+          print(n = 24)
+}
+
+# --- Zbiorcza tabela ---
+all_tests_chi_df <- bind_rows(chi_tests_summary)
+```
+
+### Tylko istotne statystycznie
+
+```{r}
+all_tests_chi_df %>% 
+  select(-p_value_adj, -significant) %>% 
+  filter(p_value < 0.1) %>% 
+  mutate(
+    p_value = format(round(p_value, 3), scientific = FALSE),
+    statistic = format(round(statistic, 3), scientific = FALSE),
+    )
 ```
 
 
 
-
 # zależność od zmiennej visited_ome
+
 
 ```{r}
 # --- Compute differences visited_ome (Tak - Nie)
@@ -464,9 +593,13 @@ diff_df <- map_long %>%
                                          decimal.mark = ",")
   ) %>%
   print()
-  
+```
 
 
+## Fig 1 to article
+
+
+```{r}
 # --- Compute overall mean per map_var ---
 overall_means <- map_long %>%
   group_by(map_var) %>%
@@ -474,31 +607,39 @@ overall_means <- map_long %>%
 
 # --- Renames labels for chart ---
 map_labels <- c(
-  m_scale                = "Scale",
-  m_border               = "Border",
-  m_path_asphalt         = "Asphalt path",
-  m_path_nature          = "Nature path",
-  m_path_other           = "Other path",
-  m_edges_border         = "Edges: border",
-  m_edges_river          = "Edges: river",
-  m_circles_lake         = "Circle: Lake",
-  m_circles_meadow       = "Circle: Meadow",
-  m_nodes_parking        = "Parking",
-  m_nodes_town           = "Town",
-  m_nodes_headquarters   = "Headquarters",
-  m_nodes_ome            = "OME",
-  m_landmark_tower       = "Tower",
-  m_landmark_shelter     = "Shelter",
-  m_landmark_birdhide    = "Bird hide",
-  m_landmark_bench       = "Bench",
-  m_landmark_bridge      = "Bridge",
-  m_landmark_ferry       = "Ferry",
+  m_scale                 = "Large-scale map",
+  m_border                = "Map border",
+  
+  m_path_asphalt          = "Asphalt paths",
+  m_path_nature           = "Nature trails",
+  m_path_other            = "Other roads",
+  
+  m_edges_border          = "Park boundary",
+  m_edges_river           = "River",
+  
+  m_circles_lake          = "Lake",
+  m_circles_meadow        = "Meadow",
+  
+  m_nodes_parking         = "Parking area",
+  m_nodes_town            = "Town",
+  m_nodes_headquarters    = "Park headquarters",
+  m_nodes_ome             = "Visitor Information Center (OME)",
+  
+  m_landmark_tower        = "Observation tower",
+  m_landmark_shelter      = "Shelter",
+  m_landmark_birdhide     = "Bird hide",
+  m_landmark_bench        = "Bench",
+  m_landmark_chimney      = "Chimney",
+  m_landmark_bridge       = "Bridge",
+  m_landmark_ferry        = "Ferry",
   m_landmark_pump_station = "Pump station",
-  m_landmark_info_board  = "Info board",
-  m_landmark_footbridge  = "Footbridge",
-  m_event_observation    = "Observation event",
-  m_event_people         = "People event"
+  m_landmark_info_board   = "Information board",
+  m_landmark_footbridge   = "Footbridge",
+  
+  m_event_observation     = "Wildlife observation",
+  m_event_people          = "People"
 )
+
 
 # --- Wykres ---
 map_long %>%
@@ -512,20 +653,24 @@ map_long %>%
     mutate(map_var = recode(map_var, !!!map_labels)) %>%
     ggplot(aes(x = map_var, y = mean_presence, fill = visited_ome)) +
       geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-      geom_text(
-        aes(label = scales::percent(mean_presence, accuracy = 0.1)),
-        position = position_dodge(width = 0.8),
-        hjust = -0.1, size = 3, color = "black"
-      ) +
+      # geom_text(
+      #   aes(label = scales::percent(mean_presence, accuracy = 0.1)),
+      #   position = position_dodge(width = 0.8),
+      #   hjust = -0.1, size = 3, color = "black"
+      # ) +
       coord_flip() +
       scale_y_continuous(
         labels = scales::percent_format(accuracy = 1), 
         breaks = seq(0, 1, by = 0.1),
         limits = c(0,1)
       ) +
+      scale_fill_manual(
+      values = c("steelblue", "grey70"),
+      labels = c("Yes", "No")
+      )+
       labs(
-        title = "Udział obecności elementów na mapie wg odwiedzin w OME",
-        x = NULL, y = "Udział obecności (%)", fill = "Odwiedził OME"
+#        title = "Obecność wybranych elementów na mapach poznawczych w zależności od odwiedzin w OME",
+        x = NULL, y = "Respondents including the element (%)", fill = "Visited OME"
       ) +
       theme_minimal(base_size = 12) +
       theme(plot.title = element_text(face = "bold"), 
@@ -533,8 +678,14 @@ map_long %>%
             )
 
 
+ggsave("Fig_1_cognitivemaps_by_ome.png", device = "png", width = 8, height = 6, dpi = 300)
+
+#ggsave("Fig_1_cognitivemaps_by_ome.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+
+```
 
 
+```{r}
 # --- Testy ---
 map_vars <- unique(map_long$map_var)
 results <- list()
@@ -669,6 +820,8 @@ diff_df %>%
 
 # zależność od zmiennej place
 
+## Fig 2 to article
+
 ```{r}
 # --- Wykres ---
 map_long %>%
@@ -682,25 +835,33 @@ map_long %>%
     mutate(map_var = recode(map_var, !!!map_labels)) %>%
     ggplot(aes(x = map_var, y = mean_presence, fill = place)) +
       geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-      geom_text(
-        aes(label = scales::percent(mean_presence, accuracy = 0.1)),
-        position = position_dodge(width = 0.8),
-        hjust = -0.1, size = 3, color = "black"
-      ) +
+      # geom_text(
+      #   aes(label = scales::percent(mean_presence, accuracy = 0.1)),
+      #   position = position_dodge(width = 0.8),
+      #   hjust = -0.1, size = 3, color = "black"
+      # ) +
       coord_flip() +
       scale_y_continuous(
         labels = scales::percent_format(accuracy = 1), 
         breaks = seq(0, 1, by = 0.1),
         limits = c(0,1)
       ) +
+      scale_fill_manual(
+      values = c("darkred", "grey60"),
+      labels = c("Betonka", "Olszynki")
+      )+
       labs(
-        title = "Udział obecności elementów na mapie wg miejsca ankietowania",
-        x = NULL, y = "Udział obecności (%)", fill = "miejsce ankietowania"
+      # title = "Obecność wybranych elementów na mapach poznawczych w zależności od miejsca ankietowania",
+        x = NULL, y = "Respondents including the element (%)", fill = "survey location"
       ) +
       theme_minimal(base_size = 12) +
       theme(plot.title = element_text(face = "bold"), 
             axis.text.y = element_text(size = 9),
             )
+
+ggsave("Fig_2_cognitivemaps_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
+
+#ggsave("Fig_2_cognitivemaps_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
 
 ```
 
