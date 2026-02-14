@@ -26,6 +26,8 @@ library(tibble)
 library(knitr)
 library(DT)
 library(tidyverse)
+library(rstatix)  # kruskal_test, dunn_test, wilcox_test, etc.
+library(FSA)      # alternatywnie dunnTest, ale tu użyjemy rstatix::dunn_test
 ```
 
 
@@ -711,6 +713,38 @@ ggplot(pnuw_education, aes(x = reorder(element, mean_rank), y = mean_rank, fill 
 
 ```
 
+
+### Fig 3 do artykułu
+
+```{r}
+pnuw_place <- pnuw_long %>%
+  group_by(place, element) %>%
+  summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+
+ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = place)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  labs(
+#    title = "Ocena elementów infrastruktury PNUW",
+#    subtitle = "Średnia ranga wg miejsca (wyższa = większe znaczenie)",
+    x = NULL,
+    y = "Average rank (higher rank = more important)"
+  ) +
+
+  scale_fill_manual(
+      name = "Place of survey",
+      values = c("darkred", "grey60"),
+      labels = c("Betonka", "Olszynki")
+      )+
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+ggsave("Fig_3_infrastructure_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
+
+#ggsave("Fig_3_infrastructure_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+```
+
+
 ### Testy statystyczne
 
 Ponieważ rangi są danymi porządkowymi (ordinalnymi), a zmienne niezależne to kategorie (wiek, płeć, miejsce, itp.), zastosujemy testy nieparametryczne:
@@ -725,13 +759,18 @@ Ponieważ rangi są danymi porządkowymi (ordinalnymi), a zmienne niezależne to
 # ANALIZA ISTOTNOŚCI RÓŻNIC W OCENACH ELEMENTÓW INFRASTRUKTURY PNUW
 # (do uruchomienia po przygotowaniu pnuw_long)
 
+pnuw_long <- pnuw_long %>%
+  mutate(
+    distance_cat = case_when(
+      distance_zone == 1 ~ "miejscowi",
+      distance_zone %in% c(2,3,4) ~ "przyjezdni",
+      TRUE ~ NA_character_
+    ),
+    distance_cat = factor(distance_cat, levels = c("miejscowi", "przyjezdni"))
+  ) %>%
+  filter(!is.na(distance_cat))
 
-library(dplyr)
-library(rstatix)  # kruskal_test, dunn_test, wilcox_test, etc.
-library(FSA)      # alternatywnie dunnTest, ale tu użyjemy rstatix::dunn_test
-library(tidyr)
-
-group_vars <- c("age", "sex", "place", "visited_ome", "distance_zone", "education")
+group_vars <- c("age", "sex", "place", "visited_ome", "distance_zone", "distance_cat", "education")
 
 all_results <- list()
 posthoc_all <- list()
@@ -838,6 +877,203 @@ print(posthoc_all_df)
 
 ```
 
+#### Testy w wariancie z innym układem zestawienia wyników
+
+W tej sekcji tabela z wynikami zawiera p-value (a nie p-vaue adj)
+
+```{r}
+# pnuw_long <- pnuw_long %>%
+#   mutate(
+#     distance_cat = case_when(
+#       distance_zone == 1 ~ "miejscowi",
+#       distance_zone %in% c(2,3,4) ~ "przyjezdni",
+#       TRUE ~ NA_character_
+#     ),
+#     distance_cat = factor(distance_cat, levels = c("miejscowi", "przyjezdni"))
+#   ) %>%
+#   filter(!is.na(distance_cat))
+
+group_vars <- c("age", "sex", "place", "visited_ome", "distance_cat", "education")
+
+all_results <- list()
+posthoc_all <- list()
+raw_results_list <- list()  # LISTA DLA WYNIKÓW PRZED KOREKTĄ
+
+for (var in group_vars) {
+  cat("\n\n==== Analiza zmiennej:", var, "====\n")
+  
+  # dla każdego elementu obliczamy test główny
+  var_res <- pnuw_long %>%
+    group_by(element) %>%
+    do({
+      df_elem <- .
+      df_elem <- df_elem %>% mutate(group = as.factor( !!rlang::sym(var) ))
+      
+      n_gr <- nlevels(droplevels(df_elem$group))
+      
+      if (n_gr < 2) {
+        tibble(test = NA_character_, element = unique(df_elem$element), 
+               p_value = NA_real_, method = "brak_grup", statistic = NA_real_, df = NA_real_)
+      } else if (n_gr == 2) {
+        wt <- wilcox.test(rank ~ group, data = df_elem)
+        tibble(test = "Wilcoxon", element = unique(df_elem$element), 
+               p_value = wt$p.value, method = "wilcox",
+               statistic = wt$statistic, df = NA_real_)
+      } else {
+        kt <- kruskal.test(rank ~ group, data = df_elem)
+        tibble(test = "Kruskal-Wallis", element = unique(df_elem$element), 
+               p_value = kt$p.value, method = "kruskal",
+               statistic = kt$statistic, df = kt$parameter)
+      }
+    }) %>%
+    ungroup()
+  
+  # korekta p-value (Holm) w obrębie danej zmiennej
+  var_res <- var_res %>%
+    mutate(p_adj = p.adjust(p_value, method = "holm"),
+           significant = ifelse(!is.na(p_adj) & p_adj < 0.05, TRUE, FALSE),
+           variable = var) %>%
+    select(variable, everything())
+  
+  all_results[[var]] <- var_res
+  
+  # ZAPISZ WYNIKI Z p < 0.1 PRZED KOREKTĄ
+  raw_results_list[[var]] <- var_res %>%
+    filter(p_value < 0.1 & !is.na(p_value)) %>%
+    select(variable, element, test, p_value, statistic, df)
+  
+  print(var_res %>% filter(!is.na(p_value)))
+  
+  # POST-HOC
+  sig_elems <- var_res %>% filter(significant == TRUE & method == "kruskal") %>% pull(element)
+  
+  if (length(sig_elems) > 0) {
+    posthoc_list <- list()
+    for (elem in sig_elems) {
+      df_sub <- pnuw_long %>%
+        filter(element == elem) %>%
+        mutate(group = as.factor( !!rlang::sym(var) )) %>%
+        drop_na(group, rank)
+      
+      counts <- table(df_sub$group)
+      if (length(counts) < 2 || any(counts < 2)) {
+        posthoc_list[[elem]] <- tibble(element = elem, comparison = NA_character_, 
+                                      p.adj = NA_real_, warning = "mało danych w grupach")
+        next
+      }
+      
+      dunn_res <- tryCatch(
+        {
+          rstatix::dunn_test(df_sub, rank ~ group, p.adjust.method = "holm") %>%
+            mutate(element = elem)
+        },
+        error = function(e) {
+          tibble(element = elem, group1 = NA_character_, group2 = NA_character_, 
+                 statistic = NA_real_, p = NA_real_, p.adj = NA_real_, 
+                 p.adj.signif = NA_character_, warning = paste("dunn error:", e$message))
+        }
+      )
+      posthoc_list[[elem]] <- dunn_res
+    }
+    posthoc_all[[var]] <- bind_rows(posthoc_list)
+    if (nrow(posthoc_all[[var]]) > 0) {
+      cat("-> Post-hoc (Dunn) — istotne porównania (p.adj < 0.05):\n")
+      print(posthoc_all[[var]] %>% filter(p.adj < 0.05))
+    } else {
+      cat("-> Brak wyników post-hoc dla tej zmiennej.\n")
+    }
+  } else {
+    cat("-> Brak istotnych wyników Kruskal dla tej zmiennej — pomijam post-hoc.\n")
+  }
+}
+
+# SCAL WYNIKI GŁÓWNE
+main_tests_all <- bind_rows(all_results)
+posthoc_all_df <- if (length(posthoc_all) > 0) bind_rows(posthoc_all, .id = "variable") else tibble()
+
+# ===== PODSUMOWANIE WYNIKÓW Z p < 0.1 PRZED KOREKTĄ =====
+cat("\n\n===================================================================")
+cat("\n===== WYNIKI Z P-VALUE < 0.1 (PRZED KOREKTĄ) - FORMAT PUBLIKACYJNY =====")
+cat("\n====================================================================\n\n")
+
+raw_results_summary <- bind_rows(raw_results_list) %>%
+  mutate(
+    test_name = case_when(
+      test == "Wilcoxon" ~ "test Wilcoxona",
+      test == "Kruskal-Wallis" ~ "test Kruskala-Wallisa",
+      TRUE ~ test
+    ),
+    statistic_text = case_when(
+      test == "Wilcoxon" ~ sprintf("W = %.1f", statistic),
+      test == "Kruskal-Wallis" ~ sprintf("χ²(%.0f) = %.2f", df, statistic),
+      TRUE ~ as.character(statistic)
+    ),
+    p_text = case_when(
+      p_value < 0.001 ~ "p < 0,001",
+      p_value < 0.01  ~ sprintf("p = %.3f", p_value),
+      p_value < 0.05  ~ sprintf("p = %.3f", p_value),
+      p_value < 0.1   ~ sprintf("p = %.3f", p_value),
+      TRUE            ~ sprintf("p = %.3f", p_value)
+    ),
+    # zamiana kropek na przecinki w p-value (polska konwencja)
+    p_text = gsub("\\.", ",", p_text),
+    statistic_text = gsub("\\.", ",", statistic_text),
+    
+    full_result = sprintf(
+      "%s: %s – %s, %s, %s",
+      variable, element, test_name, statistic_text, p_text
+    )
+  ) %>%
+  arrange(variable, p_value)
+
+# WYŚWIETL JAKO TABELĘ
+cat("--- TABELA WYNIKÓW ---\n\n")
+print(raw_results_summary %>%
+        select(variable, element, test_name, statistic_text, p_text) %>%
+        rename(
+          Zmienna = variable,
+          Element = element,
+          Test = test_name,
+          Statystyka = statistic_text,
+          `p-value` = p_text
+        ))
+
+# WYŚWIETL JAKO LISTĘ DO PUBLIKACJI
+cat("\n\n--- FORMAT PUBLIKACYJNY (LISTA) ---\n\n")
+for(i in 1:nrow(raw_results_summary)) {
+  cat(sprintf("%d. %s\n", i, raw_results_summary$full_result[i]))
+}
+
+# DODATKOWO: TYLKO NAJISTOTNIEJSZE (p < 0.05 przed korektą)
+cat("\n\n--- WYNIKI ISTOTNE STATYSTYCZNIE (p < 0,05 przed korektą) ---\n")
+raw_significant <- raw_results_summary %>% filter(p_value < 0.05)
+if(nrow(raw_significant) > 0) {
+  for(i in 1:nrow(raw_significant)) {
+    cat(sprintf("%d. %s\n", i, raw_significant$full_result[i]))
+  }
+} else {
+  cat("Brak wyników z p < 0,05 przed korektą.\n")
+}
+
+# ===== PODSUMOWANIE TESTÓW GŁÓWNYCH PO KOREKCIE =====
+cat("\n\n===== PODSUMOWANIE ISTOTNYCH WYNIKÓW (PO KOREKCIE HOLM) =====\n")
+print(main_tests_all %>% 
+        filter(significant == TRUE) %>% 
+        arrange(variable, p_adj) %>%
+        select(variable, element, test, p_value, p_adj, statistic, df))
+
+# ===== PODSUMOWANIE POST-HOC =====
+cat("\n\n===== PODSUMOWANIE POST-HOC (WSZYSTKIE) =====\n")
+if(nrow(posthoc_all_df) > 0) {
+  print(posthoc_all_df %>% 
+          select(variable, element, group1, group2, p, p.adj) %>%
+          filter(p.adj < 0.05) %>%
+          arrange(variable, element, p.adj))
+} else {
+  cat("Brak wyników post-hoc.\n")
+}
+
+```
 
 ## Proponowane zmiany w infrastrukturze
 
@@ -866,6 +1102,104 @@ all_data %>%
     )
 
 ```
+
+Sugestie zmian wg visited_ome
+
+```{r}
+all_data %>% 
+  select(starts_with("chan_"), infra_change_suggested, visited_ome) %>% 
+  filter(infra_change_suggested != "nic") %>% 
+  mutate(across(starts_with("chan_"), ~replace(., is.na(.), 0))) %>% 
+  select(-infra_change_suggested) %>% 
+  group_by(visited_ome) %>% 
+  summarise(across(starts_with("chan_"), mean, .names = "mean_{.col}")) %>%
+  pivot_longer(cols = starts_with("mean_"), 
+               names_to = "WhatToChange", 
+               values_to = "means") %>%
+  mutate(WhatToChange = sub("^mean_chan_", "", WhatToChange)) %>% 
+  ggplot(aes(x = reorder(WhatToChange, means), y = means, fill = visited_ome))+
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9))+
+    geom_text(aes(label = round(means, 3)), 
+              position = position_dodge(width = 0.9), 
+              hjust = -0.1, 
+              size = 3)+
+    coord_flip()+
+    theme_minimal() +
+    labs(
+      title = "Odsetek spośród wszystkich sugerujących zmiany, aby zmienić:",
+      subtitle = "Podział według visited_ome",
+      x = "Elementy do zmiany",
+      y = "Odsetek",
+      fill = "Visited OME"
+    )
+```
+
+Testowanie różnic:
+
+Wybór testu:
+zmienna zależna: chan_* → binarna (0/1)
+zmienna objaśniająca: visited_ome → dwukategorialna (tak/nie)
+pytanie badawcze: czy odsetek wskazań różni się między grupami
+
+To jest klasyczny problem zależności między dwiema zmiennymi jakościowymi.
+Najbardziej adekwatny test to **Test niezależności χ² Pearsona**
+
+Uzasadnienie:
+- porównujemy proporcje
+- dane są nominalne
+- nie analizujemy rang ani median
+- nie ma tu zmiennej porządkowej
+
+```{r}
+library(tidyverse)
+
+# --- Przygotowanie danych ---
+test_data <- all_data %>% 
+  select(starts_with("chan_"), infra_change_suggested, visited_ome) %>% 
+  filter(infra_change_suggested != "nic") %>% 
+  mutate(across(starts_with("chan_"), ~replace(., is.na(.), 0))) %>% 
+  select(-infra_change_suggested)
+
+chan_vars <- names(test_data)[grepl("^chan_", names(test_data))]
+
+results_list <- list()
+
+for (var in chan_vars) {
+  
+  tab <- table(test_data[[var]], test_data$visited_ome)
+  
+  # sprawdzenie liczebności oczekiwanych
+  chi_obj <- suppressWarnings(chisq.test(tab))
+  
+  if (any(chi_obj$expected < 5)) {
+    test_obj <- fisher.test(tab)
+    test_name <- "Fisher exact test"
+    statistic <- NA
+  } else {
+    test_obj <- chi_obj
+    test_name <- "Chi-square test"
+    statistic <- unname(test_obj$statistic)
+  }
+  
+  results_list[[var]] <- tibble(
+    variable = var,
+    test = test_name,
+    statistic = statistic,
+    p_value = test_obj$p.value
+  )
+}
+
+results_df <- bind_rows(results_list) %>%
+  mutate(
+    p_value_adj = p.adjust(p_value, method = "holm")
+  ) %>%
+  arrange(p_value_adj)
+
+results_df
+
+```
+
+
 
 
 # Odwiedziny w OME a inne zmienne
@@ -1235,6 +1569,8 @@ cat("\n\n===== Podsumowanie testów (wszystkie zmienne) =====\n")
 print(results_df)
 
 ```
+
+
 
 
 

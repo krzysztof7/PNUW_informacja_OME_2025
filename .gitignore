@@ -1,0 +1,26 @@
+# RStudio
+.Rhistory
+.RData
+.Rproj.user/
+
+# Dane
+.rda
+.xlsx
+
+# R Markdown output
+*.html
+
+# Charts
+*.png
+*.svg
+
+# Word documents
+*.docx
+
+# Foldery do ignorowania
+badania PNUW 2006 mapy poznawcze/
+wniosek_grantowy/
+
+# Jeśli są duże dane tymczasowe
+*.xlsx~
+*.tmp
