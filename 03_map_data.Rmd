@@ -668,6 +668,7 @@ map_long %>%
       values = c("steelblue", "grey70"),
       labels = c("Yes", "No")
       )+
+      guides(fill = guide_legend(reverse = TRUE)) +
       labs(
 #        title = "Obecność wybranych elementów na mapach poznawczych w zależności od odwiedzin w OME",
         x = NULL, y = "Respondents including the element (%)", fill = "Visited OME"
@@ -848,8 +849,9 @@ map_long %>%
       ) +
       scale_fill_manual(
       values = c("darkred", "grey60"),
-      labels = c("Betonka", "Olszynki")
+      labels = c("Ptasim Szlakiem", "Olszynki")
       )+
+      guides(fill = guide_legend(reverse = TRUE)) +
       labs(
       # title = "Obecność wybranych elementów na mapach poznawczych w zależności od miejsca ankietowania",
         x = NULL, y = "Respondents including the element (%)", fill = "survey location"

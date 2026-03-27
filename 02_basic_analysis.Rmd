@@ -734,8 +734,9 @@ ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = pl
   scale_fill_manual(
       name = "Place of survey",
       values = c("darkred", "grey60"),
-      labels = c("Betonka", "Olszynki")
+      labels = c("Ptasim Szlakiem", "Olszynki")
       )+
+  guides(fill = guide_legend(reverse = TRUE)) +
   theme_minimal(base_size = 13) +
   theme(plot.title = element_text(face = "bold"))
 
