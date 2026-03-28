@@ -28,11 +28,12 @@ library(DT)
 library(stringr)
 library(forcats)
 library(scales)
+library(purrr)
 ```
 
 # Wczytywanie i przetworzenie danych
 
-W pliku 05a różnica polega na tym, że wartości NA w zmiennych dotyczących pozyskiwania informacji od staff lub exhibition zostały zamienione na 0. W związku z tym przy obliczaniu średnich (udziałów, odsetków) w mianowniku są wszyscy odwiedzający OME (107 osób), a nie tylko Ci którzy pytali staff (39) lub odwiedzili wystawę (100).
+Kardynalną różnicą w analizach w pliku 05a, względem 05 jest to, że wartości NA w zmiennych dotyczących pozyskiwania informacji od personelu (staff) i z wystawy (exhibition) zostały zamienione na 0. W związku z tym przy obliczaniu średnich (udziałów, odsetków) w mianowniku są wszyscy odwiedzający OME (107 osób), a nie tylko Ci którzy pytali personel (39) lub odwiedzili wystawę (100).
 
 ```{r}
 load("all_data.rda")
@@ -139,7 +140,6 @@ all_ome_data <- all_ome_data %>% bind_cols(
     )
   })
 )
-
 ```
 
 ```{r}
@@ -161,7 +161,6 @@ all_ome_data <- all_ome_data %>% bind_cols(
     )
   })
 )
-
 ```
 
 
@@ -212,7 +211,6 @@ category_labels <- c(
   "how_to_get" = "How to reach specific places"
 )
 ```
-
 
 
 # 3. Analiza odowiedzi jako całości
@@ -318,8 +316,6 @@ print(staff_exh_data, n=12)
 
 
 ```{r}
-library(purrr)
-
 # 1. Pobranie unikalnych nazw kategorii
 categories <- str_remove(names(all_ome_data)[startsWith(names(all_ome_data), "staff_range_")], "staff_range_")
 
@@ -367,18 +363,6 @@ byłoby błędem metodologicznym, ponieważ testy te zakładają niezależność
 (traktowałyby nasze dane tak, jakbyśmy przebadali 214 różnych osób).
 Właściwym narzędziem do porównywania odsetków (zmiennych dychotomicznych 0/1)
 dla prób powiązanych jest Test McNemara.
-
-
-#### Opis wyników
-Spośród respondentów, którzy odwiedzili OME, 36% zwracało się do personelu z pytaniami o różnego rodzaju informacje, natomiast 93% pozyskało informacje z ekspozycji stałej.  
-
-Odwiedzający OME pytają personel głównie o zagadnienia zbliżone do tych, o których dowiadują się w trakcie zwiedzania ekspozycji, przy czym różnie rozłożone są akcenty. Personel jest odpytywany o miejsca warte odwiedzenia (16,8%), w drugiej kolejności o otwarte szlaki (ścieżki) oraz dostępność terenu (po 15%), rzadziej o sposób dotarcia do konkretnego miejsca (11,2%). Najrzadziej pytania dotyczą zwierząt (10,3%) oraz sposobów poruszania się po Parku (7,5%).  Na wystawie natomiast najczęściej odwiedzający znajdowali informację o zwierzętach (63,6%), w drugiej kolejności o wartych odwiedzenia miejscach (55,1%) oraz o otwartych szlakach (43,9%).  Relatywnie rzadko znajdowali informację o dostępności terenu (25,2%) oraz sposobach docierania do konkretnych miejsc (27,1%) i poruszania się po Paku (21,5%). 
-
-Wszystkie różnice w częstości pozyskiwania poszczególnych informacji ze wspomnianych dwóch źródeł, poza pytaniem o dostępność terenu, są istotne statystycznie. Zastosowany test McNemara wykazał wartości statystyki χ²(1) w przedziale od 7,31 do 45,45, przy czym dla wszystkich tych kategorii p < 0,01. W przypadku informacji o dostępności terenu, wynik różnicy między wskazaniami na personel (15,0%) a wystawę (25,2%) nie osiągnął progu istotności statystycznej (χ²(1) = 3,03, p = 0,082). 
-
-Traktując całość wizyty w OME jako jedno doświadczenie (fig. 4), najczęściej respondenci zdobywali informacje dotyczące zwierząt (69,2%), miejsc wartych odwiedzenia (61,7%) oraz otwartych szlaków i ścieżek (51,4%). Informacje o dostępności oraz sposobach docierania do poszczególnych obiektów w Parku uzyskało po 35,5% respondentów, a o sposobach poruszania się po Parku jedynie 26,2%. 
-
-
 
 
 # 4. Analiza wg zmiennych objaśniających
@@ -441,8 +425,6 @@ print(info_ome_freq_sex_total, n = 12)
 
 ```{r}
 # --- 1D. Testy statystyczne (Kobiety vs Mężczyźni -> próby niezależne) ---
-library(purrr)
-
 test_sex_total <- all_ome_data %>%
   filter(visited_ome == "Tak") %>%
   select(sex, starts_with("ome_range_")) %>%
@@ -475,9 +457,9 @@ test_sex_total <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
-  arrange(p_value_adj)
+  arrange(p_value)
 
 print("Testy statystyczne: OME łącznie wg płci")
 print(test_sex_total)
@@ -510,13 +492,19 @@ info_ome_freq_sex_split <- all_ome_data %>%
 # --- 2B. Wykres (Fig 5ax - poziomy słupkowy) ---
 ggplot(info_ome_freq_sex_split, aes(x = freq, y = category, fill = sex)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(
+    aes(label = round(freq, 2)), 
+    position = position_dodge(width = 0.8), # Musi być identyczne jak w geom_col
+    hjust = -0.2,                           # Przesunięcie tekstu lekko w prawo poza słupek
+    size = 3
+  )+
   scale_fill_manual(
     values = c("Kobieta" = "darkolivegreen", "Mężczyzna" = "olivedrab3"),
     labels = c("Kobieta" = "Women", "Mężczyzna" = "Men")
   ) +
   scale_y_discrete(labels = category_labels) +
   scale_x_continuous(labels = scales::percent_format(accuracy = 1),
-                     expand = expansion(mult = c(0, 0.05))) +
+                     expand = expansion(mult = c(0, 0.15))) +
   labs(
     title = "Zakres informacji uzyskanych w OME wg płci i źródła",
     x = "Response rate",
@@ -586,10 +574,10 @@ test_sex_split <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
   ungroup() %>%
-  arrange(source, p_value_adj)
+  arrange(source, p_value)
 
 print("Testy statystyczne: Staff i Exhibition wg płci")
 print(test_sex_split, n = 12)
@@ -653,8 +641,6 @@ print(info_ome_freq_distance_total, n = 12)
 
 ```{r}
 # --- 1D. Testy statystyczne (Miejscowi vs Przyjezdni -> próby niezależne) ---
-library(purrr)
-
 test_distance_total <- all_ome_data %>%
   filter(visited_ome == "Tak") %>%
   select(distance_zone2, starts_with("ome_range_")) %>%
@@ -687,9 +673,9 @@ test_distance_total <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
-  arrange(p_value_adj)
+  arrange(p_value)
 
 print("Testy statystyczne: OME łącznie wg miejsca zamieszkania")
 print(test_distance_total)
@@ -718,18 +704,23 @@ info_ome_freq_distance_split <- all_ome_data %>%
   group_by(distance_zone2, category, source) %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 
-# --- 2B. Wykres (Fig 6ax - poziomy słupkowy) ---
+# --- 2B. Wykres (Fig 6ax - KAFELKOWY z podziałem na źródła) ---
+# --- 2B. Wykres (SŁUPKOWY POZIOMY z etykietami wartości) ---
 ggplot(info_ome_freq_distance_split, aes(x = freq, y = category, fill = distance_zone2)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = round(freq, 2)), 
+    position = position_dodge(width = 0.8), # Musi być identyczne jak w geom_col
+    hjust = -0.2, size = 3
+  ) +
   scale_fill_manual(
     values = c("miejscowi" = "brown4", "przyjezdni" = "tan3"),
     labels = c("miejscowi" = "Local", "przyjezdni" = "Visitor")
   ) +
   scale_y_discrete(labels = category_labels) +
   scale_x_continuous(labels = scales::percent_format(accuracy = 1),
-                     expand = expansion(mult = c(0, 0.05))) +
+                     expand = expansion(mult = c(0, 0.15))) +
   labs(
-    title = "Zakres informacji uzyskanych w OME wg miejsca zamieszkania i źródła",
+    title = "Information obtained at OME by residence and source",
     x = "Response rate",
     y = "Information category",
     fill = "Place of residence"
@@ -738,7 +729,7 @@ ggplot(info_ome_freq_distance_split, aes(x = freq, y = category, fill = distance
   theme_minimal(base_size = 12) +
   theme(
     strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(angle = 0)
+    legend.position = "bottom"
   )
 
 ggsave("Fig_6ax_information_by_residence.png", device = "png", width = 8, height = 4, dpi = 300)
@@ -793,10 +784,10 @@ test_distance_split <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
   ungroup() %>%
-  arrange(source, p_value_adj)
+  arrange(source, p_value)
 
 print("Testy statystyczne: Staff i Exhibition wg miejsca zamieszkania")
 print(test_distance_split, n = 12)
@@ -859,8 +850,6 @@ print(info_ome_freq_age_total, n = 30)
 
 ```{r}
 # --- 1D. Testy statystyczne (Kategorie wiekowe -> próby niezależne, tabela 5x2) ---
-library(purrr)
-
 test_age_total <- all_ome_data %>%
   filter(visited_ome == "Tak") %>%
   select(age, starts_with("ome_range_")) %>%
@@ -894,9 +883,9 @@ test_age_total <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
-  arrange(p_value_adj)
+  arrange(p_value)
 
 print("Testy statystyczne: OME łącznie wg wieku")
 print(test_age_total)
@@ -931,10 +920,14 @@ info_ome_freq_age_split <- all_ome_data %>%
 # --- 2B. Wykres (Fig 7ax - poziomy słupkowy) ---
 ggplot(info_ome_freq_age_split, aes(x = freq, y = category, fill = age)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = round(freq, 2)), 
+    position = position_dodge(width = 0.8), # Musi być identyczne jak w geom_col
+    hjust = -0.2, size = 3
+  ) +
   # Usunięto scale_fill_manual, ggplot automatycznie dobierze paletę dla 5 grup wieku
   scale_y_discrete(labels = category_labels) +
   scale_x_continuous(labels = scales::percent_format(accuracy = 1),
-                     expand = expansion(mult = c(0, 0.05))) +
+                     expand = expansion(mult = c(0, 0.15))) +
   labs(
     title = "Zakres informacji uzyskanych w OME wg wieku i źródła",
     x = "Response rate",
@@ -1000,10 +993,10 @@ test_age_split <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
   ungroup() %>%
-  arrange(source, p_value_adj)
+  arrange(source, p_value)
 
 print("Testy statystyczne: Staff i Exhibition wg wieku")
 print(test_age_split, n = 12)
@@ -1070,8 +1063,6 @@ print(info_ome_freq_visit_total, n = 18)
 
 ```{r}
 # --- 1D. Testy statystyczne (Liczba wizyt -> próby niezależne, tabela 3x2) ---
-library(purrr)
-
 test_visit_total <- all_ome_data %>%
   filter(visited_ome == "Tak") %>%
   select(visits_count, starts_with("ome_range_")) %>%
@@ -1105,9 +1096,9 @@ test_visit_total <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
-  arrange(p_value_adj)
+  arrange(p_value)
 
 print("Testy statystyczne: OME łącznie wg liczby wizyt")
 print(test_visit_total)
@@ -1139,13 +1130,17 @@ info_ome_freq_visit_split <- all_ome_data %>%
 # --- 2B. Wykres (Fig 8ax - poziomy słupkowy) ---
 ggplot(info_ome_freq_visit_split, aes(x = freq, y = category, fill = visits_count)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = round(freq, 2)), 
+    position = position_dodge(width = 0.8), # Musi być identyczne jak w geom_col
+    hjust = -0.2, size = 3
+  ) +
   scale_fill_manual(
     values = c("pierwszy" = "darkorchid4", "drugi" = "darkorchid3", "trzeci lub więcej" = "mediumorchid1"),
     labels = c("pierwszy" = "1 visit", "drugi" = "2 visits", "trzeci lub więcej" = "3+ visits")
   ) +
   scale_y_discrete(labels = category_labels) +
   scale_x_continuous(labels = scales::percent_format(accuracy = 1),
-                     expand = expansion(mult = c(0, 0.05))) +
+                     expand = expansion(mult = c(0, 0.2))) +
   labs(
     title = "Zakres informacji uzyskanych w OME wg liczby wizyt i źródła",
     x = "Response rate",
@@ -1213,10 +1208,10 @@ test_visit_split <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
   ungroup() %>%
-  arrange(source, p_value_adj)
+  arrange(source, p_value)
 
 print("Testy statystyczne: Staff i Exhibition wg liczby wizyt")
 print(test_visit_split, n = 12)
@@ -1281,8 +1276,6 @@ print(info_ome_freq_reason_total, n = 40)
 
 ```{r}
 # --- 1D. Testy statystyczne (Cel przyjazdu -> próby niezależne, tabela wielopolowa) ---
-library(purrr)
-
 test_reason_total <- all_ome_data %>%
   filter(visited_ome == "Tak", !tolower(main_reason) %in% c("inne", "inna")) %>%
   select(main_reason, starts_with("ome_range_")) %>%
@@ -1316,9 +1309,9 @@ test_reason_total <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
-  arrange(p_value_adj)
+  arrange(p_value)
 
 print("Testy statystyczne: OME łącznie wg celu przyjazdu")
 print(test_reason_total)
@@ -1347,28 +1340,42 @@ info_ome_freq_reason_split <- all_ome_data %>%
   group_by(main_reason, category, source) %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 
-# --- 2B. Wykres (Fig 9ax - KAFELKOWY z podziałem na źródła) ---
-# Zgodnie z życzeniem, wykres rozdzielony na źródła jest teraz również mapą ciepła (geom_tile)
-ggplot(info_ome_freq_reason_split, aes(x = main_reason, y = category, fill = freq)) +
-  geom_tile(color = "white") +
-  geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
-  scale_y_discrete(labels = category_labels) +
-  scale_fill_gradient(
-    low = "white",
-    high = "sienna4", 
-    labels = scales::percent_format(accuracy = 1)
+# --- 2B. Wykres SŁUPKOWY dla celu przyjazdu (z etykietami) ---
+ggplot(info_ome_freq_reason_split, aes(x = freq, y = category, fill = main_reason)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = round(freq, 2)), 
+            position = position_dodge(width = 0.8), 
+            hjust = -0.2, 
+            size = 3) +
+  scale_fill_manual(
+    values = c(
+      "Odpoczynek" = "sienna1",
+      "Bliskość miejsca zamieszkania" = "sienna3",
+      "Obserwacja przyrody" = "sienna4",
+      "Poznanie terenu" = "tan4"
+    ),
+    labels = c(
+      "Odpoczynek" = "Rest",
+      "Bliskość miejsca zamieszkania" = "Proximity",
+      "Obserwacja przyrody" = "Nature observation",
+      "Poznanie terenu" = "Exploring the area"
+    )
   ) +
+  scale_y_discrete(labels = category_labels) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = expansion(mult = c(0, 0.15))) +
   labs(
-    title = "Zakres informacji uzyskanych w OME wg celu przyjazdu i źródła",
-    x = "Main reason for visit",
+    title = "Information obtained at OME by reason for visit and source",
+    x = "Response rate",
     y = "Information category",
-    fill = "Response rate"
+    fill = "Main reason"
   ) +
   facet_wrap(~ source, scales = "fixed") +  
   theme_minimal(base_size = 12) +
   theme(
     strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(angle = 30, hjust = 1)
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 0)
   )
 
 ggsave("Fig_9ax_information_by_reason.png", device = "png", width = 10, height = 5, dpi = 300)
@@ -1423,10 +1430,10 @@ test_reason_split <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
   ungroup() %>%
-  arrange(source, p_value_adj)
+  arrange(source, p_value)
 
 print("Testy statystyczne: Staff i Exhibition wg celu przyjazdu")
 print(test_reason_split, n = 12)
@@ -1490,8 +1497,6 @@ print(info_ome_freq_place_total, n = 12)
 
 ```{r}
 # --- 1D. Testy statystyczne (Miejsce ankietowania -> próby niezależne) ---
-library(purrr)
-
 test_place_total <- all_ome_data %>%
   filter(visited_ome == "Tak") %>%
   select(place, starts_with("ome_range_")) %>%
@@ -1524,9 +1529,9 @@ test_place_total <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
-  arrange(p_value_adj)
+  arrange(p_value)
 
 print("Testy statystyczne: OME łącznie wg miejsca ankietowania")
 print(test_place_total)
@@ -1556,30 +1561,32 @@ info_ome_freq_place_split <- all_ome_data %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 
 # --- 2B. Wykres (Fig 10ax - poziomy słupkowy) ---
-ggplot(info_ome_freq_place_split, aes(x = place, y = category, fill = freq)) +
-  geom_tile(color = "white") +
-  geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
-  scale_y_discrete(labels = category_labels) +
-  scale_x_discrete(labels = c("Betonka" = "Ptasim Szlakiem")) + # Zmiana nazwy na osi X
-  scale_fill_gradient(
-    low = "white",
-    high = "darkcyan", 
-    labels = scales::percent_format(accuracy = 1)
+ggplot(info_ome_freq_place_split, aes(x = freq, y = category, fill = place)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = round(freq, 2)), 
+            position = position_dodge(width = 0.8), 
+            hjust = -0.2, 
+            size = 3) +
+  scale_fill_manual(
+    values = c("Betonka" = "darkcyan", "Olszynki" = "cadetblue3"),
+    labels = c("Betonka" = "Ptasi Szlak", "Olszynki" = "Olszynki")
   ) +
+  scale_y_discrete(labels = category_labels) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = expansion(mult = c(0, 0.15))) +
   labs(
-    title = "Zakres informacji uzyskanych w OME wg miejsca ankietowania i źródła",
-    x = "Place of survey",
+    title = "Information obtained at OME by place of survey and source",
+    x = "Response rate",
     y = "Information category",
-    fill = "Response rate"
+    fill = "Place of survey"
   ) +
   facet_wrap(~ source, scales = "fixed") +  
   theme_minimal(base_size = 12) +
   theme(
     strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(angle = 30, hjust = 1)
+    legend.position = "bottom"
   )
 
-# Szerokość zmieniona na 10, aby kafelki w panelach były proporcjonalne
 ggsave("Fig_10ax_information_by_place.png", device = "png", width = 10, height = 5, dpi = 300)
 ```
 
@@ -1632,10 +1639,10 @@ test_place_split <- all_ome_data %>%
   mutate(
     p_value_adj = round(p.adjust(p_value, method = "holm"), 4),
     p_value = round(p_value, 4),
-    significant = ifelse(p_value_adj < 0.05, "Tak", "Nie")
+    significant = ifelse(p_value < 0.05, "Tak", "Nie")
   ) %>%
   ungroup() %>%
-  arrange(source, p_value_adj)
+  arrange(source, p_value)
 
 print("Testy statystyczne: Staff i Exhibition wg miejsca ankietowania")
 print(test_place_split, n = 12)
