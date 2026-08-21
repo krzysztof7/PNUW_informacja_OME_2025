@@ -13,6 +13,7 @@
 # Charts
 *.png
 *.svg
+*.eps
 
 # Word documents
 *.docx
