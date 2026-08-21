@@ -596,7 +596,7 @@ diff_df <- map_long %>%
 ```
 
 
-## Fig 1 to article
+## Fig 2 to article
 
 
 ```{r}
@@ -679,9 +679,9 @@ map_long %>%
             )
 
 
-ggsave("Fig_1_cognitivemaps_by_ome.png", device = "png", width = 8, height = 6, dpi = 300)
-
-#ggsave("Fig_1_cognitivemaps_by_ome.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+ggsave("Fig_2_cognitivemaps_by_ome.png", device = "png", width = 8, height = 6, dpi = 300)
+ggsave("Fig_2_cognitivemaps_by_ome.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+ggsave("Fig_2_cognitivemaps_by_ome.eps", device = cairo_ps, width = 8, height = 6, dpi = 300)
 
 ```
 
@@ -821,7 +821,7 @@ diff_df %>%
 
 # zależność od zmiennej place
 
-## Fig 2 to article
+## Fig 3 to article
 
 ```{r}
 # --- Wykres ---
@@ -854,17 +854,16 @@ map_long %>%
       guides(fill = guide_legend(reverse = TRUE)) +
       labs(
       # title = "Obecność wybranych elementów na mapach poznawczych w zależności od miejsca ankietowania",
-        x = NULL, y = "Respondents including the element (%)", fill = "survey location"
+        x = NULL, y = "Respondents including the element (%)", fill = "Place of survey"
       ) +
       theme_minimal(base_size = 12) +
       theme(plot.title = element_text(face = "bold"), 
             axis.text.y = element_text(size = 9),
             )
 
-ggsave("Fig_2_cognitivemaps_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
-
-#ggsave("Fig_2_cognitivemaps_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
-
+ggsave("Fig_3_cognitivemaps_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
+ggsave("Fig_3_cognitivemaps_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+ggsave("Fig_3_cognitivemaps_by_place.eps", device = cairo_ps, width = 8, height = 6, dpi = 300)
 ```
 
 ## tabela zbiorcza w DT:datatable()

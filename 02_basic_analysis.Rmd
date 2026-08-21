@@ -148,7 +148,7 @@ all_data %>%
 ```{r}
 all_data %>%
   select(starts_with("m_")) %>%
-  summarise(across(everything(), ~ summary(.) ))
+  summary()
 ```
 
 
@@ -714,16 +714,27 @@ ggplot(pnuw_education, aes(x = reorder(element, mean_rank), y = mean_rank, fill 
 ```
 
 
-### Fig 3 do artykułu
+### Fig 4 do artykułu
 
 ```{r}
 pnuw_place <- pnuw_long %>%
+  filter(!is.na(element), !is.na(place)) %>%
   group_by(place, element) %>%
   summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
 
 ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = place)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
   coord_flip() +
+  scale_x_discrete(labels = c(
+  "walktrails" = "Walk trails",
+  "edupaths"   = "Nature trails",
+  "biketrails" = "Bike trails",
+  "viewpoints" = "Viewpoints",
+  "parking"    = "Parking",
+  "bins"       = "Bins",
+  "infoboards" = "Info boards",
+  "restspots"  = "Rest spots"
+))+
   labs(
 #    title = "Ocena elementów infrastruktury PNUW",
 #    subtitle = "Średnia ranga wg miejsca (wyższa = większe znaczenie)",
@@ -740,9 +751,10 @@ ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = pl
   theme_minimal(base_size = 13) +
   theme(plot.title = element_text(face = "bold"))
 
-ggsave("Fig_3_infrastructure_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
 
-#ggsave("Fig_3_infrastructure_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+ggsave("Fig_4_infrastructure_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
+ggsave("Fig_4_infrastructure_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+ggsave("Fig_4_infrastructure_by_place.eps", device = cairo_ps, width = 8, height = 6, dpi = 300)
 ```
 
 

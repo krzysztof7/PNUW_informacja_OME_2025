@@ -243,7 +243,7 @@ all_ome_data %>%
 
 
 
-### Fig 4 do artykułu - porównanie wg źródła informacji
+### Fig 5 do artykułu - porównanie wg źródła informacji
 
 ```{r}
 # --- przygotowanie danych: staff ---
@@ -292,7 +292,7 @@ ggplot(staff_exh_data, aes(x = category_label, y = frequency, fill = type)) +
   scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
   labs(
       #title = "Odsetek wskazań wg kategorii - staff i exhibition",
-       x = "Information category",
+       x = NULL, #"Information category",
        y = "Share of respondents (%)",
        fill = "Typ") +
    scale_fill_manual(
@@ -304,10 +304,9 @@ ggplot(staff_exh_data, aes(x = category_label, y = frequency, fill = type)) +
   theme_minimal(base_size = 12) +
   coord_flip()
 
-ggsave("Fig_4x_information_by_staff_exhibition.png", device = "png", width = 8, height = 4, dpi = 300)
-
-#ggsave("Fig_4_information_by_staff_exhibition.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
-
+ggsave("Fig_5_information_by_staff_exhibition.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_5_information_by_staff_exhibition.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_5_information_by_staff_exhibition.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
 ```
 
 ```{r}
@@ -389,10 +388,10 @@ info_ome_freq_sex_total <- all_ome_data %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 ```
 
-### Fig_5 do artykułu Płeć połączona - bez podziału na Wystawa i Personel
+### Fig_6 do artykułu Płeć połączona - bez podziału na Wystawa i Personel
 
 ```{r}
-# --- 1B. Wykres (Fig 5 - kafelkowy) ---
+# --- 1B. Wykres (Fig 6 - kafelkowy) ---
 ggplot(info_ome_freq_sex_total, aes(x = sex, y = category, fill = freq)) +
   geom_tile(color = "white") +
   geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
@@ -404,15 +403,18 @@ ggplot(info_ome_freq_sex_total, aes(x = sex, y = category, fill = freq)) +
     labels = scales::percent_format(accuracy = 1)
   ) +
   labs(
-    title = "Information obtained at OME by sex group",
-    x = "Sex",
-    y = "Information category",
+   # title = "Information obtained at OME by sex group",
+    x = "Gender",
+    y = NULL, #"Information category",
     fill = "Response rate"
   ) +
   theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-ggsave("Fig_5_information_by_sex_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_6_information_by_gender_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_6_information_by_gender_total.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_6_information_by_gender_total.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
+
 ```
 
 
@@ -607,14 +609,14 @@ info_ome_freq_distance_total <- all_ome_data %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 ```
 
-### Fig_6 do artykułu Miejsce zamieszkania połączone - bez podziału na Wystawa i Personel
+### Fig_7 do artykułu Miejsce zamieszkania połączone - bez podziału na Wystawa i Personel
 
 ```{r}
-# --- 1B. Wykres (Fig 6 - kafelkowy) ---
+# --- 1B. Wykres (Fig 7 - kafelkowy) ---
 ggplot(info_ome_freq_distance_total, aes(x = distance_zone2, y = category, fill = freq)) +
   geom_tile(color = "white") +
   geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
-  scale_x_discrete(labels = c("miejscowi" = "Local", "przyjezdni" = "Visitor")) +
+  scale_x_discrete(labels = c("miejscowi" = "Local residents", "przyjezdni" = "Non-local visitors")) +
   scale_y_discrete(labels = category_labels) +
   scale_fill_gradient(
     low = "white",
@@ -622,15 +624,18 @@ ggplot(info_ome_freq_distance_total, aes(x = distance_zone2, y = category, fill 
     labels = scales::percent_format(accuracy = 1)
   ) +
   labs(
-    title = "Information obtained at OME by place of residence",
+ #   title = "Information obtained at OME by place of residence",
     x = "Place of residence",
-    y = "Information category",
+    y = NULL, #"Information category",
     fill = "Response rate"
   ) +
   theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-ggsave("Fig_6_information_by_residence_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_7_information_by_residence_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_7_information_by_residence_total.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_7_information_by_residence_total.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
+
 ```
 
 ```{r}
@@ -817,13 +822,14 @@ info_ome_freq_age_total <- all_ome_data %>%
 ```
 
 
-### Fig_7 do artykułu Informacja wg Wieku
+### Fig_8 do artykułu Informacja wg Wieku
 
 ```{r}
-# --- 1B. Wykres (Fig 7 - kafelkowy) ---
+# --- 1B. Wykres (Fig 8 - kafelkowy) ---
 ggplot(info_ome_freq_age_total, aes(x = age, y = category, fill = freq)) +
   geom_tile(color = "white") +
   geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
+  scale_x_discrete(labels = c("powyżej 60" = "60+")) +
   scale_y_discrete(labels = category_labels) +
   scale_fill_gradient(
     low = "white",
@@ -831,15 +837,18 @@ ggplot(info_ome_freq_age_total, aes(x = age, y = category, fill = freq)) +
     labels = scales::percent_format(accuracy = 1)
   ) +
   labs(
-    title = "Information obtained at OME by age group",
+  #  title = "Information obtained at OME by age group",
     x = "Age group",
-    y = "Information category",
+    y = NULL, #"Information category",
     fill = "Response rate"
   ) +
   theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-ggsave("Fig_7_information_by_age_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_8_information_by_age_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_8_information_by_age_total.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_8_information_by_age_total.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
+
 ```
 
 ```{r}
@@ -1025,10 +1034,10 @@ info_ome_freq_visit_total <- all_ome_data %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 ```
 
-### Fig 8 do artykułu
+### Fig 9 do artykułu
 
 ```{r}
-# --- 1B. Wykres (Fig 8 - kafelkowy) ---
+# --- 1B. Wykres (Fig 9 - kafelkowy) ---
 ggplot(info_ome_freq_visit_total, aes(x = visits_count, y = category, fill = freq)) +
   geom_tile(color = "white") +
   geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
@@ -1044,15 +1053,18 @@ ggplot(info_ome_freq_visit_total, aes(x = visits_count, y = category, fill = fre
     labels = scales::percent_format(accuracy = 1)
   ) +
   labs(
-    title = "Information obtained at OME by visit count",
+ #   title = "Information obtained at OME by visit count",
     x = "Number of visits",
-    y = "Information category",
+    y = NULL, #"Information category",
     fill = "Response rate"
   ) +
   theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-ggsave("Fig_8_information_by_visit_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_9_information_by_visit_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_9_information_by_visit_total.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_9_information_by_visit_total.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
+
 ```
 
 ```{r}
@@ -1242,29 +1254,38 @@ info_ome_freq_reason_total <- all_ome_data %>%
   summarise(freq = mean(value, na.rm = TRUE), .groups = "drop")
 ```
 
-### Fig 8 do artykułu
+### Fig 10 do artykułu
 
 ```{r}
-# --- 1B. Wykres (Fig 9 - kafelkowy) ---
+# --- 1B. Wykres (Fig 10 - kafelkowy) ---
 ggplot(info_ome_freq_reason_total, aes(x = main_reason, y = category, fill = freq)) +
   geom_tile(color = "white") +
   geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
   scale_y_discrete(labels = category_labels) +
+  scale_x_discrete(labels = c(
+    "Odpoczynek" = "Rest/\nRelaxation",
+    "Bliskość miejsca zamieszkania" = "Close\nto home", 
+    "Obserwacja przyrody" = "Nature\nwatching",
+    "Poznanie terenu" = "Exploring\nthe area"
+))+
   scale_fill_gradient(
     low = "white",
     high = "sienna4", # Zastosowano stonowany, naturalny kolor pasujący do stylistyki
     labels = scales::percent_format(accuracy = 1)
   ) +
   labs(
-    title = "Information obtained at OME by main reason for visit",
+  #  title = "Information obtained at OME by main reason for visit",
     x = "Main reason for visit",
-    y = "Information category",
+    y = NULL, #"Information category",
     fill = "Response rate"
   ) +
   theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-ggsave("Fig_9_information_by_reason_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_10_information_by_reason_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_10_information_by_reason_total.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_10_information_by_reason_total.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
+
 ```
 
 
@@ -1463,10 +1484,10 @@ info_ome_freq_place_total <- all_ome_data %>%
 ```
 
 
-### Fig_10 do artykułu Informacja wg źródła i miejsca ankietowania
+### Fig_11 do artykułu Informacja wg źródła i miejsca ankietowania
 
 ```{r}
-# --- 1B. Wykres (Fig 10 - kafelkowy) ---
+# --- 1B. Wykres (Fig 11 - kafelkowy) ---
 ggplot(info_ome_freq_place_total, aes(x = place, y = category, fill = freq)) +
   geom_tile(color = "white") +
   geom_text(aes(label = paste0(round(freq*100,1), "%")), size = 3) +
@@ -1478,15 +1499,18 @@ ggplot(info_ome_freq_place_total, aes(x = place, y = category, fill = freq)) +
     labels = scales::percent_format(accuracy = 1)
   ) +
   labs(
-    title = "Information obtained at OME by place of survey",
+   # title = "Information obtained at OME by place of survey",
     x = "Place of survey",
-    y = "Information category",
+    y = NULL, #"Information category",
     fill = "Response rate"
   ) +
   theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
 
-ggsave("Fig_10_information_by_place_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_11_information_by_place_total.png", device = "png", width = 8, height = 4, dpi = 300)
+ggsave("Fig_11_information_by_place_total.svg", device = svglite::svglite, width = 8, height = 4, dpi = 300)
+ggsave("Fig_11_information_by_place_total.eps", device = cairo_ps, width = 8, height = 4, dpi = 300)
+
 ```
 
 ```{r}
