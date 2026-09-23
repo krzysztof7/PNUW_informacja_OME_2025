@@ -623,7 +623,7 @@ map_labels <- c(
   m_nodes_parking         = "Parking area",
   m_nodes_town            = "Town",
   m_nodes_headquarters    = "Park headquarters",
-  m_nodes_ome             = "Visitor Information Center (OME)",
+  m_nodes_ome             = "Visitor Information Center (MEC)",
   
   m_landmark_tower        = "Observation tower",
   m_landmark_shelter      = "Shelter",
@@ -671,7 +671,7 @@ map_long %>%
       guides(fill = guide_legend(reverse = TRUE)) +
       labs(
 #        title = "Obecność wybranych elementów na mapach poznawczych w zależności od odwiedzin w OME",
-        x = NULL, y = "Respondents including the element (%)", fill = "Visited OME"
+        x = NULL, y = "Respondents including the element (%)", fill = "Visited MEC"
       ) +
       theme_minimal(base_size = 12) +
       theme(plot.title = element_text(face = "bold"), 
@@ -821,7 +821,7 @@ diff_df %>%
 
 # zależność od zmiennej place
 
-## Fig 3 to article
+## Fig 3 to article - usunięty po recenzji
 
 ```{r}
 # --- Wykres ---

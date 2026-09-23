@@ -714,16 +714,17 @@ ggplot(pnuw_education, aes(x = reorder(element, mean_rank), y = mean_rank, fill 
 ```
 
 
-### Fig 4 do artykułu
+### Fig 3 do artykułu
 
 ```{r}
 pnuw_place <- pnuw_long %>%
   filter(!is.na(element), !is.na(place)) %>%
-  group_by(place, element) %>%
+  group_by(visited_ome, element) %>%
   summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
 
-ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = place)) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+
+ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = visited_ome)) +
+  geom_col(position = position_dodge(width = 0.8, reverse = TRUE), width = 0.7) +
   coord_flip() +
   scale_x_discrete(labels = c(
   "walktrails" = "Walk trails",
@@ -736,25 +737,67 @@ ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = pl
   "restspots"  = "Rest spots"
 ))+
   labs(
-#    title = "Ocena elementów infrastruktury PNUW",
-#    subtitle = "Średnia ranga wg miejsca (wyższa = większe znaczenie)",
     x = NULL,
     y = "Average rank (higher rank = more important)"
   ) +
-
   scale_fill_manual(
-      name = "Place of survey",
-      values = c("darkred", "grey60"),
-      labels = c("Ptasim Szlakiem", "Olszynki")
-      )+
-  guides(fill = guide_legend(reverse = TRUE)) +
+    name = "Visited MEC",
+    values = c("Tak" = "darkred", "Nie" = "grey60"),
+    labels = c("Tak" = "Yes", "Nie" = "No")
+    )+
   theme_minimal(base_size = 13) +
   theme(plot.title = element_text(face = "bold"))
 
 
-ggsave("Fig_4_infrastructure_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
-ggsave("Fig_4_infrastructure_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
-ggsave("Fig_4_infrastructure_by_place.eps", device = cairo_ps, width = 8, height = 6, dpi = 300)
+ggsave("Fig_3_infrastructure_by_OME.png", device = "png", width = 8, height = 6, dpi = 300)
+ggsave("Fig_3_infrastructure_by_OME.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+ggsave("Fig_3_infrastructure_by_OME.eps", device = cairo_ps, width = 8, height = 6, dpi = 300)
+```
+
+
+
+### Fig 4 (3) do artykułu
+- po recenzjach zamieniony na fig. 3 oraz w relacji do visited OME
+
+```{r}
+# pnuw_place <- pnuw_long %>%
+#   filter(!is.na(element), !is.na(place)) %>%
+#   group_by(place, element) %>%
+#   summarise(mean_rank = mean(rank, na.rm = TRUE), .groups = "drop")
+# 
+# ggplot(pnuw_place, aes(x = reorder(element, mean_rank), y = mean_rank, fill = place)) +
+#   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+#   coord_flip() +
+#   scale_x_discrete(labels = c(
+#   "walktrails" = "Walk trails",
+#   "edupaths"   = "Nature trails",
+#   "biketrails" = "Bike trails",
+#   "viewpoints" = "Viewpoints",
+#   "parking"    = "Parking",
+#   "bins"       = "Bins",
+#   "infoboards" = "Info boards",
+#   "restspots"  = "Rest spots"
+# ))+
+#   labs(
+# #    title = "Ocena elementów infrastruktury PNUW",
+# #    subtitle = "Średnia ranga wg miejsca (wyższa = większe znaczenie)",
+#     x = NULL,
+#     y = "Average rank (higher rank = more important)"
+#   ) +
+# 
+#   scale_fill_manual(
+#       name = "Place of survey",
+#       values = c("darkred", "grey60"),
+#       labels = c("Ptasim Szlakiem", "Olszynki")
+#       )+
+#   guides(fill = guide_legend(reverse = TRUE)) +
+#   theme_minimal(base_size = 13) +
+#   theme(plot.title = element_text(face = "bold"))
+# 
+# 
+# ggsave("Fig_4_infrastructure_by_place.png", device = "png", width = 8, height = 6, dpi = 300)
+# ggsave("Fig_4_infrastructure_by_place.svg", device = svglite::svglite, width = 8, height = 6, dpi = 300)
+# ggsave("Fig_4_infrastructure_by_place.eps", device = cairo_ps, width = 8, height = 6, dpi = 300)
 ```
 
 
@@ -866,7 +909,7 @@ for (var in group_vars) {
     # pokaż tylko istotne porównania
     if (nrow(posthoc_all[[var]]) > 0) {
       cat("-> Post-hoc (Dunn) — istotne porównania (p.adj < 0.05):\n")
-      print(posthoc_all[[var]] %>% filter(p.adj < 0.05))
+      print(posthoc_all[[var]] %>% filter(p.adj < 0.10))
     } else {
       cat("-> Brak wyników post-hoc dla tej zmiennej.\n")
     }
