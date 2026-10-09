@@ -1,0 +1,236 @@
+---
+title: "08_main_effects_controlled"
+author: "KP"
+date: "2026-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+library(MASS) # Do modeli regresji porządkowej (ocena infrastruktury)
+library(tibble)
+
+# Wczytanie bazy danych (upewnij się, że nazwa pliku jest prawidłowa)
+load("all_data.rda")
+```
+
+
+# Odpowiedzi na recenzje - runda 2 - 
+
+## uwaga 2:
+
+*2. Trzeba uwzględnić miejsce badania w głównych porównaniach. Lokalizacja różnicuje zarówno treść map, jak i udział w zadaniu rysunkowym. To szczególnie ważne, ponieważ porównanie odwiedzających i nieodwiedzających MEC stanowi centralny element tego artykułu. Należy przedstawić rozkład wizyt w MEC według miejsca badania i przeprowadzić porównania z uwzględnieniem lokalizacji — poprzez analizę warstwową lub odpowiednio oszczędne modele regresji. Warto również uwzględnić wcześniejsze wizyty i miejsce zamieszkania. Bez tego trudno oddzielić związek z wizytą w centrum od różnic między badanymi grupami.*
+
+### Rozkład wizyt
+
+**Należy przedstawić rozkład wizyt w MEC według miejsca badania**
+
+```{r}
+### Rozkład wizyt w OME/MEC w podziale na miejsce badania
+
+ome_by_place <- all_data %>%
+  filter(!is.na(visited_ome), !is.na(place)) %>%
+  count(place, visited_ome) %>%
+  group_by(place) %>%
+  mutate(Procent = round(100 * n / sum(n), 1)) %>%
+  ungroup() %>%
+  pivot_wider(
+    names_from = visited_ome, 
+    values_from = c(n, Procent), 
+    values_fill = 0
+  )
+
+kable(ome_by_place, caption = "Rozkład wizyt w OME w zależności od miejsca badania")
+```
+
+### Porównania z uwzględnieniem lokalizacji (regresja logistyczna dla zawartości map)
+
+**przeprowadzić porównania z uwzględnieniem lokalizacji — poprzez analizę warstwową lub odpowiednio oszczędne modele regresji. Warto również uwzględnić wcześniejsze wizyty i miejsce zamieszkania**
+
+```{r}
+### Wpływ wizyty w OME na rysowanie wież widokowych (z kontrolą zmiennych)
+
+# Przygotowanie danych (usuwamy braki danych w zmiennych do modelu)
+model_data_maps <- all_data %>%
+  filter(!is.na(visited_ome), !is.na(place), !is.na(visits_count), !is.na(distance_zone2), !is.na(m_landmark_tower)) %>%
+  mutate(drawn_tower_bin = if_else(m_landmark_tower == "tak", 1, 0))
+
+# Budowa oszczędnego modelu regresji logistycznej
+model_tower <- glm(drawn_tower_bin ~ visited_ome + place + visits_count + distance_zone2, 
+                   data = model_data_maps, 
+                   family = "binomial")
+
+# Wyświetlenie wyników modeu (analiza wariancji z testem Chi-kwadrat)
+drop1(model_tower, test = "Chisq")
+```
+
+**Dla wszystkich zmiennych**
+
+```{r}
+
+m_vars <- grep("^m_", names(all_data), value = TRUE)
+
+summary_results <- data.frame()
+
+for (var in m_vars) {
+  
+  model_data <- all_data %>%
+    filter(
+      !is.na(visited_ome),
+      !is.na(place),
+      !is.na(visits_count),
+      !is.na(distance_zone2),
+      !is.na(.data[[var]])
+    ) %>%
+    mutate(
+      drawn_bin = if_else(.data[[var]] == "tak", 1, 0)
+    )
+  
+  model <- glm(
+    drawn_bin ~ visited_ome + place + visits_count + distance_zone2,
+    data = model_data,
+    family = "binomial"
+  )
+  
+  tmp <- drop1(model, test = "Chisq") %>%
+    as.data.frame() %>%
+    rownames_to_column("predictor") %>%
+    mutate(variable = var)
+  
+  summary_results <- bind_rows(summary_results, tmp)
+}
+
+summary_results
+```
+
+
+```{r}
+summary_results %>%
+  filter(predictor == "visited_ome") 
+```
+
+
+#### Interpretacja wyników wielozmiennowej regresji logistycznej dla zawartości map poznawczych (zmienne m_)
+
+Powyższa tabela przedstawia wyniki testu stosunku wiarygodności (LRT na podstawie funkcji `drop1()`) dla oszczędnych modeli regresji logistycznej szacowanych dla 25 elementów map poznawczych[cite: 1, 4]. W każdym modelu zmienną objaśnianą była binarna obecność danego elementu na mapie (tak/nie), a zestaw predyktorów obejmował: wizytę w MEC (`visited_ome`), miejsce ankietowania (`place`), liczbę wcześniejszych wizyt (`visits_count`) oraz strefę zamieszkania (`distance_zone2`)[cite: 1, 4].
+
+Główne wnioski z analizy kształtują się następująco:
+
+* **Brak statystycznie istotnego związku z wizytą w MEC (`visited_ome`):**
+  Dla 24 spośród 25 analizowanych elementów krajobrazu i infrastruktury zmienna `visited_ome` okazała się nieistotna statystycznie ($p > 0.05$). Dotyczy to kluczowych obiektów przestrzennych, takich jak ścieżki przyrodnicze (`m_path_nature`: $p = 0.555$), szlaki utwardzone (`m_path_asphalt`: $p = 0.316$), granice Parku (`m_border`: $p = 0.535$), wieże widokowe (`m_landmark_tower`: $p = 0.509$) czy sam budynek OME (`m_nodes_ome`: $p = 0.493$). Jedynym elementem wykazującym istotność na poziomie $\alpha = 0.05$ była siedziba dyrekcji Parku (`m_nodes_headquarters`: $\text{LRT} = 5.890$, $p = 0.015$). Wyniki te dowodzą, że po wyizolowaniu wpływu lokalizacji badania i profilu demograficznego, wizyta w MEC nie różnicuje zawartości map poznawczych[cite: 1, 4].
+
+* **Dominujący wpływ miejsca badania (`place`):**
+  Zmienna `place` okazała się najsilniejszym i najczęściej istotnym statystycznie predyktorem zawartości map. Wpływała m.in. na obecność innych ścieżek (`m_path_other`: $\text{LRT} = 28.239$, $p < 0.001$), kładek (`m_landmark_footbridge`: $\text{LRT} = 13.589$, $p = 0.0002$), zdarzeń obserwacji przyrody (`m_event_observation`: $\text{LRT} = 12.278$, $p = 0.0005$), mostów (`m_landmark_bridge`: $\text{LRT} = 9.325$, $p = 0.002$), jezior (`m_circles_lake`: $\text{LRT} = 8.175$, $p = 0.004$), miejscowości (`m_nodes_town`: $\text{LRT} = 6.361$, $p = 0.012$), łąk (`m_circles_meadow`: $\text{LRT} = 5.264$, $p = 0.022$), granic Parku (`m_border`: $\text{LRT} = 4.918$, $p = 0.027$) oraz rzek (`m_edges_river`: $\text{LRT} = 4.757$, $p = 0.029$). Potwierdza to zasadność obaw Redakcji co do silnego efektu zakłócającego lokalizacji[cite: 1, 4].
+
+* **Ograniczona rola zmiennych tła (`distance_zone2` i `visits_count`):**
+  Strefa zamieszkania różnicowała istotnie jedynie rysowanie rzek (`m_edges_river`: $p = 0.009$) oraz innych ludzi/obserwatorów (`m_event_people`: $p = 0.020$). Z kolei liczba wcześniejszych wizyt (`visits_count`) nie osiągnęła progu istotności dla żadnego z elementów ($p > 0.05$).
+
+* **Uwaga metodologiczna (separacja danych):**
+  Dla zmiennych `m_scale` oraz `m_landmark_chimney` modele wykazały wartości dewiacji bliskie zeru i $p = 1.000$, co wynika ze zjawiska quasi-całkowitej separacji (niemal całkowity brak wariancji w próbie badawczej dla tych cech).
+
+
+
+
+
+
+### Oszczędne modele regresji porządkowej dla infrastruktury
+
+```{r}
+# Przygotowanie danych dla oceny infrastruktury (np. ranga wież)
+model_data_infra <- all_data %>%
+  filter(!is.na(visited_ome), !is.na(place), !is.na(visits_count), !is.na(distance_zone2), !is.na(m_landmark_tower)) %>%
+  mutate(rank_tower_ord = factor(pnuw_viewpoints, ordered = TRUE, levels = 1:8))
+
+# Model regresji porządkowej
+model_infra <- polr(rank_tower_ord ~ visited_ome + place + visits_count + distance_zone2, 
+                    data = model_data_infra, 
+                    Hess = TRUE)
+
+# Obliczenie p-values dla modelu polr
+ctable <- coef(summary(model_infra))
+p_val <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+ctable_final <- cbind(ctable, "p value" = round(p_val, 4))
+kable(ctable_final)
+```
+
+
+```{r}
+infra_vars <- grep("^pnuw_", names(all_data), value = TRUE)
+
+summary_results <- data.frame()
+
+for (var in infra_vars) {
+
+  model_data <- all_data %>%
+    filter(
+      !is.na(visited_ome),
+      !is.na(place),
+      !is.na(visits_count),
+      !is.na(distance_zone2),
+      !is.na(.data[[var]])
+    ) %>%
+    mutate(
+      rank_ord = factor(.data[[var]], ordered = TRUE, levels = 1:8)
+    )
+
+  model <- polr(
+    rank_ord ~ visited_ome + place + visits_count + distance_zone2,
+    data = model_data,
+    Hess = TRUE
+  )
+
+  ctable <- coef(summary(model))
+
+  p_val <- pnorm(
+    abs(ctable[, "t value"]),
+    lower.tail = FALSE
+  ) * 2
+
+  tmp <- data.frame(
+    variable = var,
+    predictor = rownames(ctable),
+    estimate = ctable[, "Value"],
+    std_error = ctable[, "Std. Error"],
+    t_value = ctable[, "t value"],
+    p_value = p_val,
+    row.names = NULL
+  )
+
+  summary_results <- rbind(summary_results, tmp)
+}
+
+summary_results
+
+```
+
+#### Interpretacja wyników wielozmiennowej regresji porządkowej dla oceny infrastruktury (zmienne pnuw_)
+
+Powyższa tabela przedstawia parametry modeli proporcjonalnych szans (regresji porządkowej `polr()`) wyznaczonych dla wszystkich 8 ocenianych elementów infrastruktury turystycznej Parku[cite: 1, 7]. Zmiennymi zależnymi były rangi przypisane elementom (od 1 do 8)[cite: 2, 7].
+
+Główne wnioski z analizy modeli rangowych:
+
+* **Brak istotnego związku z wizytą w MEC (`visited_omeNie`):**
+  Dla żadnego z 8 analizowanych elementów infrastruktury fakt nieodwiedzenia OME nie różnicował istotnie przypisywanej rangi ($p > 0.05$ we wszystkich modelach)[cite: 7]. Poziomy istotności wyniosły odpowiednio:
+  - punkty widokowe (`pnuw_viewpoints`): $t = -1.583$, $p = 0.113$,
+  - parkingi (`pnuw_parking`): $t = 0.906$, $p = 0.365$,
+  - szlaki piesze (`pnuw_walktrails`): $t = 0.895$, $p = 0.371$,
+  - miejsca odpoczynku (`pnuw_restspots`): $t = 0.804$, $p = 0.421$,
+  - kosze na śmieci (`pnuw_bins`): $t = 0.781$, $p = 0.435$,
+  - ścieżki edukacyjne (`pnuw_edupaths`): $t = -0.365$, $p = 0.715$,
+  - tablice informacyjne (`pnuw_infoboards`): $t = 0.205$, $p = 0.838$,
+  - szlaki rowerowe (`pnuw_biketrails`): $t = -0.079$, $p = 0.937$.
+  Brak różnic w rangach pomiędzy grupami utrzymuje się po pełnej kontroli statystycznej[cite: 7].
+
+* **Silna rola lokalizacji badania (`placeOlszynki`):**
+  Lokalizacja ankietowania istotnie modyfikowała priorytety infrastrukturalne dla połowy elementów:
+  - ścieżki edukacyjne (`pnuw_edupaths`): wyższa ranga w Olszynkach ($t = 4.012$, $p < 0.001$),
+  - parkingi (`pnuw_parking`): niższa ranga w Olszynkach ($t = -3.347$, $p < 0.001$),
+  - szlaki rowerowe (`pnuw_biketrails`): wyższa ranga w Olszynkach ($t = 2.388$, $p = 0.017$),
+  - kosze na śmieci (`pnuw_bins`): niższa ranga w Olszynkach ($t = -2.280$, $p = 0.023$).
+
+* **Wpływ odległości zamieszkania (`distance_zone2.L`) i wcześniejszych wizyt (`visits_count.L`):**
+  Przyjezdni przypisywali istotnie wyższą rangę szlakom pieszym ($p = 0.027$) oraz niższą szlakom rowerowym ($p = 0.019$) i koszom na śmieci ($p = 0.005$). Liczba wcześniejszych wizyt różnicowała jedynie priorytet punktów widokowych ($t = -2.481$, $p = 0.013$), które były wyżej cenione przez osoby z mniejszym doświadczeniem wizytowym.
+
