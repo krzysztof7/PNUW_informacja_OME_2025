@@ -336,13 +336,26 @@ mcnemar_results <- map_df(categories, function(cat) {
   # Correct = TRUE stosuje poprawkę na ciągłość (zalecane)
   test <- suppressWarnings(mcnemar.test(tab, correct = TRUE))
   
+  # ==========================================================
+  # NOWY KOD: Wyliczenie współczynnika g Cohena i 95% CI
+  # ==========================================================
+  eff_res <- tryCatch(
+    effectsize::cohens_g(tab, ci = 0.95),
+    error = function(e) data.frame(Cohens_g = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+  )
+  # ==========================================================
+  
   # Zwracanie wyników jako wiersz ramki danych
   data.frame(
     category = cat,
     p_value = round(test$p.value, 4),
     statistic = round(unname(test$statistic), 2),
     test_type = "McNemar",
-    significant = ifelse(test$p.value < 0.05, "Tak", "Nie")
+    significant = ifelse(test$p.value < 0.05, "Tak", "Nie"),
+    cohens_g = round(eff_res$Cohens_g[1], 2),
+    ci_low = round(eff_res$CI_low[1], 2),
+    ci_high = round(eff_res$CI_high[1], 2),
+    n = sum(tab) # W tym teście n to zawsze 107 (wszyscy z OME)
   )
 })
 
@@ -658,6 +671,12 @@ test_distance_total <- all_ome_data %>%
     tab <- table(df_cat$distance_zone2, df_cat$value) # Tabela krzyżowa: Zamieszkanie vs Odpowiedź (0/1)
     
     chi <- suppressWarnings(chisq.test(tab))
+    # --- NOWY KOD: Wyliczenie V Craméra i 95% CI ---
+    cramer_v_res <- tryCatch(
+      effectsize::cramers_v(tab, ci = 0.95),
+      error = function(e) data.frame(Cramers_v = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+    )
+    # -----------------------------------------------
     if (any(chi$expected < 5)) {
       test <- fisher.test(tab)
       test_type <- "Fisher"
@@ -672,7 +691,11 @@ test_distance_total <- all_ome_data %>%
       category = cat_name,
       test_type = test_type,
       statistic = round(stat, 2),
-      p_value = test$p.value
+      p_value = test$p.value,
+      cramers_v = cramer_v_res$Cramers_v[1],
+      ci_low = cramer_v_res$CI_low[1],
+      ci_high = cramer_v_res$CI_high[1],
+      n = sum(tab)
     )
   }) %>%
   mutate(
@@ -871,6 +894,14 @@ test_age_total <- all_ome_data %>%
     tab <- table(df_cat$age, df_cat$value) # Tabela krzyżowa: Wiek (5 grup) vs Odpowiedź (0/1)
     
     chi <- suppressWarnings(chisq.test(tab))
+    
+    # --- NOWY KOD: Wyliczenie V Craméra i 95% CI ---
+    cramer_v_res <- tryCatch(
+      effectsize::cramers_v(tab, ci = 0.95),
+      error = function(e) data.frame(Cramers_v = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+    )
+    # -----------------------------------------------
+    
     if (any(chi$expected < 5)) {
       # Dla tabel > 2x2 używamy symulacji Monte Carlo, aby uniknąć błędów braku pamięci (workspace)
       test <- fisher.test(tab, simulate.p.value = TRUE, B = 10000)
@@ -886,7 +917,11 @@ test_age_total <- all_ome_data %>%
       category = cat_name,
       test_type = test_type,
       statistic = round(stat, 2),
-      p_value = test$p.value
+      p_value = test$p.value,
+      cramers_v = cramer_v_res$Cramers_v[1],
+      ci_low = cramer_v_res$CI_low[1],
+      ci_high = cramer_v_res$CI_high[1],
+      n = sum(tab)
     )
   }) %>%
   mutate(
@@ -980,6 +1015,14 @@ test_age_split <- all_ome_data %>%
     tab <- table(df_cat$age, df_cat$value)
     
     chi <- suppressWarnings(chisq.test(tab))
+    
+    # --- NOWY KOD: Wyliczenie V Craméra i 95% CI ---
+    cramer_v_res <- tryCatch(
+      effectsize::cramers_v(tab, ci = 0.95),
+      error = function(e) data.frame(Cramers_v = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+    )
+    # -----------------------------------------------
+    
     if (any(chi$expected < 5)) {
       test <- fisher.test(tab, simulate.p.value = TRUE, B = 10000)
       test_type <- "Fisher (simulated)"
@@ -995,7 +1038,11 @@ test_age_split <- all_ome_data %>%
       category = cat_name,
       test_type = test_type,
       statistic = round(stat, 2),
-      p_value = test$p.value
+      p_value = test$p.value,
+      cramers_v = cramer_v_res$Cramers_v[1],
+      ci_low = cramer_v_res$CI_low[1],
+      ci_high = cramer_v_res$CI_high[1],
+      n = sum(tab)
     )
   }) %>%
   group_by(source) %>%
@@ -1087,6 +1134,14 @@ test_visit_total <- all_ome_data %>%
     tab <- table(df_cat$visits_count, df_cat$value) # Tabela krzyżowa: Wizyty (3 grupy) vs Odpowiedź (0/1)
     
     chi <- suppressWarnings(chisq.test(tab))
+    
+    # --- NOWY KOD: Wyliczenie V Craméra i 95% CI ---
+    cramer_v_res <- tryCatch(
+      effectsize::cramers_v(tab, ci = 0.95),
+      error = function(e) data.frame(Cramers_v = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+    )
+    # -----------------------------------------------
+    
     if (any(chi$expected < 5)) {
       # Symulacja Monte Carlo dla tabeli 3x2, by uniknąć problemów z pamięcią operacyjną
       test <- fisher.test(tab, simulate.p.value = TRUE, B = 10000)
@@ -1102,7 +1157,11 @@ test_visit_total <- all_ome_data %>%
       category = cat_name,
       test_type = test_type,
       statistic = round(stat, 2),
-      p_value = test$p.value
+      p_value = test$p.value,
+      cramers_v = cramer_v_res$Cramers_v[1],
+      ci_low = cramer_v_res$CI_low[1],
+      ci_high = cramer_v_res$CI_high[1],
+      n = sum(tab)
     )
   }) %>%
   mutate(

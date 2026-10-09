@@ -507,12 +507,14 @@ if (is.list(test_res) && !isTRUE(test_res$error)) {
   
   cat("\nTest:", test_name, "\nstat =", stat, "df =", param, "p =", signif(pval, 6), "\n")
   
-  # Cramer's V (miara siły związku)
-  cramers <- tryCatch(
-    rstatix::cramer_v(tab),
-    error = function(e) NA_real_
+  # Cramer's V wraz z 95% CI (z pakietu effectsize)
+  cramer_v_res <- tryCatch(
+    effectsize::cramers_v(tab, ci = 0.95),
+    error = function(e) data.frame(Cramers_v = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
   )
-  cat("Cramér's V =", signif(cramers, 4), "\n")
+  cat("Cramér's V =", signif(cramer_v_res$Cramers_v[1], 4), 
+      "95% CI [", cramer_v_res$CI_low[1], ",", cramer_v_res$CI_high[1], "]\n")
+  
   
   # Zwróć tabelę wyników jako tibble
   result_summary <- tibble(
@@ -521,7 +523,10 @@ if (is.list(test_res) && !isTRUE(test_res$error)) {
     statistic = stat,
     df = param,
     p_value = pval,
-    cramers_v = cramers
+    cramers_v = cramer_v_res$Cramers_v[1],
+    ci_low = cramer_v_res$CI_low[1],
+    ci_high = cramer_v_res$CI_high[1],
+    n = sum(tab)
   )
 } else {
   cat("\nTest nie mógł zostać wykonany. Błąd:", if (is.list(test_res) && !is.null(test_res$message)) test_res$message else "unknown", "\n")
@@ -972,14 +977,32 @@ for (var in group_vars) {
                p_value = NA_real_, method = "brak_grup", statistic = NA_real_, df = NA_real_)
       } else if (n_gr == 2) {
         wt <- wilcox.test(rank ~ group, data = df_elem)
-        tibble(test = "Wilcoxon", element = unique(df_elem$element), 
-               p_value = wt$p.value, method = "wilcox",
-               statistic = wt$statistic, df = NA_real_)
+# Obliczenie wielkości efektu dla testu Wilcoxona (rank-biserial)
+        eff_res <- tryCatch(
+          effectsize::rank_biserial(rank ~ group, data = df_elem, ci = 0.95),
+          error = function(e) data.frame(r_rank_biserial = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+        )
+        
+        tibble(test = "Wilcoxon", 
+               element = unique(df_elem$element), 
+               p_value = wt$p.value, 
+               method = "wilcox",
+               statistic = as.numeric(wt$statistic), 
+               df = NA_real_,
+               # --- nowe zmienne ---
+               effect_size = eff_res$r_rank_biserial[1],
+               ci_low = eff_res$CI_low[1],
+               ci_high = eff_res$CI_high[1],
+               n = nrow(df_elem %>% drop_na(rank, group))) # n dla porównywanej podgrupy
       } else {
         kt <- kruskal.test(rank ~ group, data = df_elem)
-        tibble(test = "Kruskal-Wallis", element = unique(df_elem$element), 
-               p_value = kt$p.value, method = "kruskal",
-               statistic = kt$statistic, df = kt$parameter)
+  tibble(test = "Kruskal-Wallis", 
+               element = unique(df_elem$element), 
+               p_value = kt$p.value, 
+               method = "kruskal",
+               statistic = as.numeric(kt$statistic), 
+               df = kt$parameter,
+               effect_size = NA_real_, ci_low = NA_real_, ci_high = NA_real_, n = nrow(df_elem %>% drop_na(rank, group)))
       }
     }) %>%
     ungroup()
