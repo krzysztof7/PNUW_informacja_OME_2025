@@ -30,6 +30,7 @@ library(psych)
 library(vegan)     # vegdist (Jaccard)
     # tetrachoric
 library(cluster)
+library(effectsize)
 ```
 
 
@@ -459,7 +460,6 @@ Wartości p pochodzą z testu χ² lub – w uzasadnionych przypadkach – z tes
 
 Uwaga: W pierwszym podejściu do analizy, ze względu na dużą liczbę równoległych testów (analiza wielu elementów mapy), zastosowano korektę wartości p metodą Holma w celu kontroli skumulowanego błędu I rodzaju. Za istotne statystycznie uznawano wówczas wyniki, dla których p po korekcie było mniejsze niż 0,05. Z podejścia tego zrezygnowano ze względu na bardzo nieliczne przypadki istotności po korekcie, co znacząco ograniczało możliwość interpretacji wyników w analizie eksploracyjnej.
 
-
 ```{r}
 # ==========================================================
 # TESTY CHI-KWADRAT NIEZALEŻNOŚCI
@@ -471,7 +471,6 @@ all_map_data2 <- all_data %>%
   filter(!is.na(m_scale))
 
 explanatory_vars2 <- c("sex", "age", "education", "place", "visited_ome", "distance_zone2")
-
 
 chi_tests_summary <- list()
 
@@ -513,6 +512,15 @@ for (var in explanatory_vars2) {
     
     chi_obj <- suppressWarnings(chisq.test(tab))
     
+    # ==========================================================
+    # NOWY KOD: Wyliczenie V Craméra i 95% CI
+    # ==========================================================
+    cramer_v_res <- tryCatch(
+      effectsize::cramers_v(tab, ci = 0.95),
+      error = function(e) data.frame(Cramers_v = NA_real_, CI_low = NA_real_, CI_high = NA_real_)
+    )
+    # ==========================================================
+    
     # Sprawdzenie oczekiwanych liczebności
     if (any(chi_obj$expected < 5)) {
       fisher_obj <- fisher.test(tab)
@@ -521,7 +529,11 @@ for (var in explanatory_vars2) {
         map_var = mv,
         test = "Fisher",
         p_value = fisher_obj$p.value,
-        statistic = NA_real_
+        statistic = NA_real_,
+        cramers_v = cramer_v_res$Cramers_v[1],
+        ci_low = cramer_v_res$CI_low[1],
+        ci_high = cramer_v_res$CI_high[1],
+        n = sum(tab)
       )
       
     } else {
@@ -530,10 +542,14 @@ for (var in explanatory_vars2) {
         map_var = mv,
         test = "Chi-square",
         p_value = chi_obj$p.value,
-        statistic = as.numeric(chi_obj$statistic)
+        statistic = as.numeric(chi_obj$statistic),
+        cramers_v = cramer_v_res$Cramers_v[1],
+        ci_low = cramer_v_res$CI_low[1],
+        ci_high = cramer_v_res$CI_high[1],
+        n = sum(tab)
       )
     }
-  }
+  } # Koniec zagnieżdżonej pętli for (mv in map_vars)
   
   chi_res_df <- bind_rows(chi_res_list) %>%
     mutate(
@@ -541,7 +557,8 @@ for (var in explanatory_vars2) {
       p_value_adj = p.adjust(p_value, method = "holm"),
       significant = p_value_adj < 0.05
     ) %>%
-    select(variable, everything())
+    # Uporządkowanie kolumn
+    select(variable, map_var, test, p_value, p_value_adj, significant, statistic, cramers_v, ci_low, ci_high, n)
   
   chi_tests_summary[[var]] <- chi_res_df
   
@@ -550,11 +567,14 @@ for (var in explanatory_vars2) {
           filter(!is.na(p_value)) %>%
           arrange(p_value) %>%
           print(n = 24)
-}
+} # Koniec głównej pętli for (var in explanatory_vars2)
 
 # --- Zbiorcza tabela ---
 all_tests_chi_df <- bind_rows(chi_tests_summary)
 ```
+
+
+
 
 ### Tylko istotne statystycznie
 
