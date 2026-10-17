@@ -65,6 +65,12 @@ model_tower <- glm(drawn_tower_bin ~ visited_ome + place + visits_count + distan
 
 # Wyświetlenie wyników modeu (analiza wariancji z testem Chi-kwadrat)
 drop1(model_tower, test = "Chisq")
+
+# Pełna tabela z OR, 95% CI i p-value:
+broom::tidy(model_tower, exponentiate = TRUE, conf.int = TRUE)
+
+# Liczebność próby w modelu:
+nobs(model_tower)
 ```
 
 **Dla wszystkich zmiennych**
@@ -132,6 +138,120 @@ Główne wnioski z analizy kształtują się następująco:
   Dla zmiennych `m_scale` oraz `m_landmark_chimney` modele wykazały wartości dewiacji bliskie zeru i $p = 1.000$, co wynika ze zjawiska quasi-całkowitej separacji (niemal całkowity brak wariancji w próbie badawczej dla tych cech).
 
 
+#### Drugi wartant obliczeń regresji logistycznej dla elementów mapy
+
+**Tutaj obliczenia do trzeciej rundy poprawek uwag redakcji.**
+
+*Autorzy informują o regresji logistycznej i porządkowej, ale nie przedstawiają tabel z OR, 95% CI, wartościami p i liczebnością poszczególnych modeli. Samo stwierdzenie, że MEC pozostaje nieistotnym predyktorem, nie pozwala ocenić tych analiz.*
+
+
+```{r}
+library(dplyr)
+library(broom)
+library(purrr)
+
+# 1. Pobranie zmiennych mapowych z wyłączeniem skali
+map_vars <- setdiff(grep("^m_", names(all_data), value = TRUE), "m_scale")
+
+# 2. Pętla z filtrem minimalnej liczebności (np. minimum 10 wystąpień danego elementu)
+tabela_modele_mapy_stabilne <- map_dfr(map_vars, function(var_name) {
+  
+  df_sub <- all_data %>%
+    filter(!is.na(visited_ome), !is.na(place), !is.na(visits_count), 
+           !is.na(distance_zone2), !is.na(.data[[var_name]])) %>%
+    mutate(y_bin = if_else(.data[[var_name]] == "tak", 1, 0))
+  
+  liczba_jedynek <- sum(df_sub$y_bin == 1)
+  
+  # Warunek: pomijamy obiekty rysowane przez 10 osób lub mniej 
+  # (zabezpiecza przed quasi-complete separation i ostrzeżeniami glm.fit)
+  if (liczba_jedynek < 11) {
+    message("Pominięto ", var_name, " - zbyt rzadki element (n = ", liczba_jedynek, ")")
+    return(NULL)
+  }
+  
+  fit <- tryCatch({
+    glm(y_bin ~ visited_ome + place + visits_count + distance_zone2, 
+        data = df_sub, family = "binomial")
+  }, error = function(e) NULL)
+  
+  if (is.null(fit)) return(NULL)
+  
+  # Wyciągnięcie parametrów
+  tidy(fit, exponentiate = TRUE, conf.int = TRUE) %>%
+    mutate(
+      dependent_var = var_name,
+      n = nobs(fit),
+      events = liczba_jedynek
+    ) %>%
+    dplyr::select(dependent_var, term, estimate, conf.low, conf.high, p.value, n, events)
+})
+
+# 3. Zestawienie dla predyktora MEC
+tabela_ome_stabilne <- tabela_modele_mapy_stabilne %>%
+  filter(term == "visited_omeNie") %>%
+  arrange(p.value)
+
+print(tabela_ome_stabilne, n = 30)
+```
+
+
+
+##### Tu dla odmiany model regresji logistycznej dla miejsca ankietowania
+
+Wyniki poniższego modelu wykazują, że miejsce ankietowania jest istotnym predyktorem zaznaczania elementów na mapach poznawczych (dla rysowania 8 elementów)
+
+```{r}
+library(dplyr)
+library(broom)
+library(purrr)
+
+# 1. Pobranie zmiennych mapowych z wyłączeniem skali
+map_vars <- setdiff(grep("^m_", names(all_data), value = TRUE), "m_scale")
+
+# 2. Pętla z filtrem minimalnej liczebności (np. minimum 10 wystąpień danego elementu)
+tabela_modele_mapy_stabilne <- map_dfr(map_vars, function(var_name) {
+  
+  df_sub <- all_data %>%
+    filter(!is.na(visited_ome), !is.na(place), !is.na(visits_count), 
+           !is.na(distance_zone2), !is.na(.data[[var_name]])) %>%
+    mutate(y_bin = if_else(.data[[var_name]] == "tak", 1, 0))
+  
+  liczba_jedynek <- sum(df_sub$y_bin == 1)
+  
+  # Warunek: pomijamy obiekty rysowane przez 10 osób lub mniej 
+  # (zabezpiecza przed quasi-complete separation i ostrzeżeniami glm.fit)
+  if (liczba_jedynek < 11) {
+    message("Pominięto ", var_name, " - zbyt rzadki element (n = ", liczba_jedynek, ")")
+    return(NULL)
+  }
+  
+  fit <- tryCatch({
+    glm(y_bin ~ visited_ome + place + visits_count + distance_zone2, 
+        data = df_sub, family = "binomial")
+  }, error = function(e) NULL)
+  
+  if (is.null(fit)) return(NULL)
+  
+  # Wyciągnięcie parametrów
+  tidy(fit, exponentiate = TRUE, conf.int = TRUE) %>%
+    mutate(
+      dependent_var = var_name,
+      n = nobs(fit),
+      events = liczba_jedynek
+    ) %>%
+    dplyr::select(dependent_var, term, estimate, conf.low, conf.high, p.value, n, events)
+})
+
+# 3. Zestawienie dla predyktora MIEJSCA BADANIA (Survey Location)
+# Zmieniamy filtr, aby pokazał parametry wyliczone dla "Olszynek" względem "Betonki"
+tabela_place_stabilne <- tabela_modele_mapy_stabilne %>%
+  filter(term == "placeOlszynki") %>%
+  arrange(p.value)
+
+cat("\n==== WYNIKI REGRESJI DLA PREDYKTORA 'MIEJSCE BADANIA' (Olszynki vs Betonka) ====\n")
+print(tabela_place_stabilne, n = 30)
+```
 
 
 
@@ -154,6 +274,9 @@ ctable <- coef(summary(model_infra))
 p_val <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
 ctable_final <- cbind(ctable, "p value" = round(p_val, 4))
 kable(ctable_final)
+
+# Dla pojedynczego modelu infrastruktury:
+broom::tidy(model_infra, exponentiate = TRUE, conf.int = TRUE)
 ```
 
 
@@ -233,4 +356,53 @@ Główne wnioski z analizy modeli rangowych:
 
 * **Wpływ odległości zamieszkania (`distance_zone2.L`) i wcześniejszych wizyt (`visits_count.L`):**
   Przyjezdni przypisywali istotnie wyższą rangę szlakom pieszym ($p = 0.027$) oraz niższą szlakom rowerowym ($p = 0.019$) i koszom na śmieci ($p = 0.005$). Liczba wcześniejszych wizyt różnicowała jedynie priorytet punktów widokowych ($t = -2.481$, $p = 0.013$), które były wyżej cenione przez osoby z mniejszym doświadczeniem wizytowym.
+
+#### Ponowne obliczenie modeli regresji pożądkowej (dla rangowania infrastruktury) - jako odpowiedź na 3 rundę uwag redakcji
+
+```{r}
+library(dplyr)
+library(broom)
+library(MASS)
+
+infra_vars <- grep("^pnuw_", names(all_data), value = TRUE)
+
+summary_results <- data.frame()
+
+for (var in infra_vars) {
+  
+  model_data <- all_data %>%
+    filter(
+      !is.na(visited_ome),
+      !is.na(place),
+      !is.na(visits_count),
+      !is.na(distance_zone2),
+      !is.na(.data[[var]])
+    ) %>%
+    mutate(
+      rank_ord = factor(.data[[var]], ordered = TRUE, levels = 1:8)
+    )
+  
+  model <- polr(
+    rank_ord ~ visited_ome + place + visits_count + distance_zone2,
+    data = model_data,
+    Hess = TRUE
+  )
+  
+  # To jedno wywołanie broom::tidy zastępuje całe żmudne wyciąganie ctable,
+  # wyliczanie pnorm i budowanie tmp. Ustawienie exponentiate = TRUE
+  # automatycznie zamienia log-odds na wymagane przez redaktora OR.
+  tmp <- tidy(model, exponentiate = TRUE, conf.int = TRUE) %>% 
+         filter(coef.type == "coefficient") %>% # wyrzucamy punkty odcięcia
+         mutate(
+           variable = var,
+           p.value = 2 * pnorm(abs(statistic), lower.tail = FALSE),
+           n = nobs(model)
+         )
+
+  summary_results <- rbind(summary_results, tmp)
+}
+
+# summary_results zawiera teraz kolumny: estimate (to jest Twoje OR), 
+# conf.low, conf.high oraz p.value
+```
 
